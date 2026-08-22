@@ -461,6 +461,7 @@ export function registerAuthRoutes(app: FastifyInstance, pool: pg.Pool, config: 
       organizationName: invite.organization_name,
       role: invite.role_code,
       inviterName: invite.inviter_name,
+      expiresAt: invite.expires_at.toISOString(),
     }
   })
 
@@ -577,8 +578,31 @@ export function registerAuthRoutes(app: FastifyInstance, pool: pg.Pool, config: 
           }),
         ]
       )
+      await client.query(
+        `INSERT INTO audit_events (
+          organization_id, actor_user_id, actor_type, event_type, metadata
+        ) VALUES ($1, $2, 'user', 'INVITATION_CONFIRMED', $3::jsonb)`,
+        [
+          invite.organization_id,
+          newUserId,
+          JSON.stringify({
+            email: invite.email,
+            role: invite.role_code,
+          }),
+        ]
+      )
 
       await client.query('COMMIT')
+
+      // Dispatch confirmation email in background
+      await emailService.sendEmail(
+        emailService.buildInvitationConfirmationEmail({
+          to: invite.email,
+          displayName: invite.display_name,
+          organizationName: invite.organization_name,
+          loginUrl: `${config.WEB_ORIGIN.replace(/\/$/, '')}/`,
+        })
+      ).catch(() => undefined)
 
       // Set session cookie
       const cookieString = `nvara_session=${encodeURIComponent(sessionRawToken)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${sessionTtlSeconds}${
@@ -670,7 +694,7 @@ export function registerAuthRoutes(app: FastifyInstance, pool: pg.Pool, config: 
         [user.id, tokenHash, expiresAt]
       )
 
-      // Dispatch transactional email
+      // Dispatch transactional email (fault-tolerant)
       const resetUrl = `${config.WEB_ORIGIN.replace(/\/$/, '')}/reset-password?token=${rawToken}`
       await emailService.sendEmail(
         emailService.buildPasswordResetEmail({
@@ -680,7 +704,9 @@ export function registerAuthRoutes(app: FastifyInstance, pool: pg.Pool, config: 
           ipAddress: ip,
           ttlMinutes: 15,
         })
-      )
+      ).catch((err) => {
+        console.warn(`[Password Reset Email Warning] Could not send email to ${email}: ${err?.message || err}`)
+      })
 
       // Append audit log
       await pool.query(

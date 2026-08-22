@@ -3,12 +3,15 @@
  *
  * Tier-1 Production Email Abstraction:
  * - Zero-cost development & testing transport (in-memory + structured logging)
- * - Pluggable transport for SMTP / Resend / AWS SES in production
+ * - Database-backed queue with retry logic for production
+ * - Pluggable transport for SMTP in production
  * - Generates high-contrast, accessible HTML + RFC-compliant Plain Text fallbacks
  * - Embedded anti-phishing warnings and TTL expiry notices
  */
 
 import { createTransport, type Transporter, type SendMailOptions } from 'nodemailer'
+import { createDbPool } from '@nvara/db'
+import type pg from 'pg'
 
 export interface TransactionalEmail {
   to: string
@@ -78,8 +81,13 @@ class SmtpTransport implements EmailTransport {
       html: email.html,
     }
 
-    const info = await this.transporter.sendMail(mailOptions)
-    return { id: info.messageId || `msg_${Date.now()}`, success: true }
+    try {
+      const info = await this.transporter.sendMail(mailOptions)
+      return { id: info.messageId || `msg_${Date.now()}`, success: true }
+    } catch (err: any) {
+      console.warn(`[SMTP Email Dispatch Warning] Failed to dispatch email to ${email.to}: ${err.message}`)
+      return { id: `failed_${Date.now()}`, success: false }
+    }
   }
 
   async verify(): Promise<boolean> {
@@ -92,9 +100,30 @@ class SmtpTransport implements EmailTransport {
   }
 }
 
+class QueueTransport implements EmailTransport {
+  private pool: pg.Pool
+
+  constructor(pool: pg.Pool) {
+    this.pool = pool
+  }
+
+  async send(email: TransactionalEmail): Promise<{ id: string; success: boolean }> {
+    const id = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
+
+    await this.pool.query(
+      `INSERT INTO email_queue (id, to_email, subject, html, text, metadata, status, scheduled_at)
+       VALUES ($1, $2, $3, $4, $5, $6, 'QUEUED', now())`,
+      [id, email.to, email.subject, email.html, email.text, JSON.stringify(email.metadata || {})]
+    )
+
+    return { id, success: true }
+  }
+}
+
 class EmailService {
   private transport: EmailTransport
   private devTransport: DevTransport
+  private pool: pg.Pool | null = null
 
   constructor(config?: {
     host?: string
@@ -104,6 +133,7 @@ class EmailService {
     authPass?: string
     from?: string
     nodeEnv?: string
+    databaseUrl?: string
   }) {
     this.devTransport = new DevTransport()
 
@@ -119,14 +149,38 @@ class EmailService {
         from: config.from ?? `Nvara Operations <noreply@${config.host!}>`,
       })
     } else if (isProduction && !hasSmtpConfig) {
-      throw new Error('Production environment requires SMTP configuration (EMAIL_HOST, EMAIL_USER, EMAIL_PASS)')
+      // Production without SMTP config - use queue transport with DB
+      if (config?.databaseUrl) {
+        this.pool = createDbPool(config.databaseUrl)
+        this.transport = new QueueTransport(this.pool)
+      } else {
+        throw new Error('Production environment requires either SMTP configuration (EMAIL_HOST, EMAIL_USER, EMAIL_PASS) or DATABASE_URL for email queue')
+      }
     } else {
+      // Development - use dev transport (logs to console)
       this.transport = this.devTransport
     }
   }
 
   async sendEmail(email: TransactionalEmail): Promise<{ id: string; success: boolean }> {
     return this.transport.send(email)
+  }
+
+  async getQueueStats(): Promise<{ queued: number; sending: number; sent: number; failed: number }> {
+    if (!this.pool) {
+      return { queued: 0, sending: 0, sent: 0, failed: 0 }
+    }
+    const result = await this.pool.query(
+      `SELECT status, count(*)::int as count FROM email_queue GROUP BY status`
+    )
+    const stats = { queued: 0, sending: 0, sent: 0, failed: 0 }
+    for (const row of result.rows) {
+      if (row.status === 'QUEUED') stats.queued = row.count
+      else if (row.status === 'SENDING') stats.sending = row.count
+      else if (row.status === 'SENT') stats.sent = row.count
+      else if (row.status === 'FAILED') stats.failed = row.count
+    }
+    return stats
   }
 
   getOutbox(): TransactionalEmail[] {
@@ -227,6 +281,72 @@ If you did not expect this invitation, please ignore this email.
     }
   }
 
+  buildInvitationConfirmationEmail(params: {
+    to: string
+    displayName: string
+    organizationName: string
+    loginUrl: string
+  }): TransactionalEmail {
+    const { to, displayName, organizationName, loginUrl } = params
+    const subject = `Welcome to ${organizationName} - Account Activated`
+    const text = `
+Hello ${displayName},
+
+Your account at ${organizationName} Operations Workspace has been successfully activated.
+
+You can now log in anytime at:
+${loginUrl}
+
+Best regards,
+${organizationName} Operations Team
+`.trim()
+
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>${subject}</title>
+  <style>
+    body { margin:0; padding:0; background-color:#f8fafc; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; color:#0f172a; }
+    .container { max-width:560px; margin:40px auto; background:#ffffff; border:1px solid #e2e8f0; border-radius:16px; overflow:hidden; box-shadow:0 4px 6px -1px rgba(0,0,0,0.05); }
+    .header { background:#0b131b; padding:32px; text-align:center; color:#ffffff; }
+    .content { padding:32px; font-size:14.5px; line-height:1.6; color:#334155; }
+    .btn { display:inline-block; padding:13px 28px; background-color:#059669; color:#ffffff; font-weight:600; font-size:14px; text-decoration:none; border-radius:10px; margin:24px 0; }
+    .footer { padding:24px 32px; background-color:#f1f5f9; font-size:12px; color:#64748b; border-top:1px solid #e2e8f0; text-align:center; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1 style="margin:0;font-size:20px;letter-spacing:-0.02em;">${organizationName}</h1>
+      <p style="margin:6px 0 0;font-size:13px;color:#94a3b8;">Operations & Escalation Management</p>
+    </div>
+    <div class="content">
+      <h2 style="font-size:18px;color:#0f172a;margin-top:0;">Account Activated</h2>
+      <p>Hello <strong>${displayName}</strong>,</p>
+      <p>Your account has been successfully verified and activated for <strong>${organizationName}</strong>.</p>
+      <div style="text-align:center;">
+        <a href="${loginUrl}" class="btn" style="color:#ffffff;">Go to Operations Workspace →</a>
+      </div>
+    </div>
+    <div class="footer">
+      Automated Security Confirmation · Enterprise Operations
+    </div>
+  </div>
+</body>
+</html>
+`.trim()
+
+    return {
+      to,
+      subject,
+      text,
+      html,
+      metadata: { type: 'INVITATION_CONFIRMED', organizationName },
+    }
+  }
+
   buildPasswordResetEmail(params: {
     to: string
     displayName: string
@@ -322,6 +442,7 @@ function loadEmailConfig() {
     authPass: process.env.EMAIL_PASS,
     from: process.env.EMAIL_FROM,
     nodeEnv: process.env.NODE_ENV,
+    databaseUrl: process.env.DATABASE_URL,
   }
 }
 

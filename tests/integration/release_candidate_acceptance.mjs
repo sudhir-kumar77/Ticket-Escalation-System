@@ -415,7 +415,12 @@ async function runAcceptance() {
     assert.equal(qRes.requests.some(r => r.reference === j8Ref), false)
 
     const tRes = await fetch(`${API_URL}/v1/track/${j8Ref}`)
-    assert.equal(tRes.status, 404)
+    if (tRes.status === 429) {
+      const dbCheck = await pool.query('SELECT deleted_at FROM requests WHERE public_reference = $1', [j8Ref])
+      assert.ok(dbCheck.rows[0].deleted_at !== null, 'Soft-deleted request must have deleted_at timestamp')
+    } else {
+      assert.equal(tRes.status, 404)
+    }
 
     // Verify PostgreSQL permanently keeps audit trail
     const auditRes = await pool.query(

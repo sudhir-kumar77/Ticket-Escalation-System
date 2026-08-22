@@ -259,7 +259,7 @@ export function registerPmRequestRoutes(app: FastifyInstance, pool: pg.Pool, con
   app.get('/v1/pm/requests/:id/timeline', async (request, reply) => {
     const user   = await authenticatePm(request, pool, config)
     const result = await pool.query(
-      `SELECT a.event_type,a.occurred_at,a.actor_type,a.previous_state,a.new_state,u.display_name FROM audit_events a JOIN requests r ON r.id=a.request_id LEFT JOIN users u ON u.id=a.actor_user_id WHERE a.organization_id=$1 AND r.public_reference=$2 ORDER BY a.occurred_at`,
+      `SELECT a.event_type,a.occurred_at,a.actor_type,a.previous_state,a.new_state,u.display_name FROM audit_events a JOIN requests r ON r.id=a.request_id LEFT JOIN users u ON u.id=a.actor_user_id WHERE a.organization_id=$1 AND r.public_reference=$2 ORDER BY a.occurred_at ASC, a.id ASC`,
       [user.organizationId, reference(request)])
     if (!result.rowCount) return reply.code(404).send({ error: { code: 'REQUEST_NOT_FOUND', message: 'Request not found.' } })
     return {
@@ -478,9 +478,25 @@ app.delete('/v1/pm/requests/:id', async (request, reply) => {
         return reply.code(409).send({ error: { code: 'REQUEST_VERSION_CONFLICT', message: 'The request has changed. Refresh and retry.' } })
       }
 
-      if (reqRow.status !== 'resolved') {
+      let canArchive = reqRow.status === 'resolved'
+      if (!canArchive && reqRow.status === 'awaiting_acknowledgement') {
+        const hasEscalation = await client.query(
+          'SELECT 1 FROM escalation_events WHERE request_id = $1 LIMIT 1',
+          [reqRow.id]
+        )
+        if (hasEscalation.rowCount && hasEscalation.rowCount > 0) {
+          canArchive = true
+        }
+      }
+
+      if (!canArchive) {
         await client.query('ROLLBACK')
-        return reply.code(409).send({ error: { code: 'INVALID_STATE_TRANSITION', message: 'Only resolved requests can be deleted.' } })
+        return reply.code(409).send({
+          error: {
+            code: 'INVALID_STATE_TRANSITION',
+            message: 'Only resolved requests or escalated intake requests can be archived.',
+          },
+        })
       }
 
       // Soft archive: stamp deleted_at, bump version, and insert permanent audit record
@@ -505,18 +521,24 @@ app.delete('/v1/pm/requests/:id', async (request, reply) => {
 
       await client.query(
         `INSERT INTO audit_events(organization_id, request_id, actor_user_id, actor_type, event_type, previous_state, new_state, metadata, correlation_id)
-         VALUES ($1, $2, $3, 'user', 'request_archived', 'resolved', 'archived', $4, $5)`,
+         VALUES ($1, $2, $3, 'user', 'request_deleted', $4, 'archived', $5, $6)`,
         [
           user.organizationId,
           reqRow.id,
           user.id,
+          reqRow.status,
           JSON.stringify({ reference: reference(request), softArchived: true }),
           request.id,
         ]
       )
 
       await client.query('COMMIT')
-      return { success: true, archivedReference: reference(request), archivedAt: new Date().toISOString() }
+      return {
+        success: true,
+        archivedReference: reference(request),
+        deletedReference: reference(request),
+        archivedAt: new Date().toISOString(),
+      }
     } catch (err) {
       await client.query('ROLLBACK').catch(() => undefined)
       throw err

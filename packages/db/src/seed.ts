@@ -270,7 +270,7 @@ try {
       const assignId = assignRes.rows[0].id
 
       await client.query(
-        "INSERT INTO audit_events(organization_id, request_id, assignment_id, actor_user_id, actor_type, event_type, new_state) VALUES ($1, $2, $3, $4, 'human', 'assigned', $5)",
+        `INSERT INTO audit_events(organization_id, request_id, assignment_id, actor_user_id, actor_type, event_type, new_state) VALUES ($1, $2, $3, $4, 'user', 'assigned', $5)`,
         [org.id, reqId, assignId, pmUser.id, s.status]
       )
 
@@ -278,19 +278,20 @@ try {
       const deadline = s.slaStatus === 'breached' ? "now() - interval '2 hours'" : "now() + interval '20 hours'"
       const ackAt = s.status === 'in_progress' || s.status === 'resolved' || s.status === 'acknowledged' ? 'now()' : 'NULL'
 
-      await client.query(
-        `INSERT INTO sla_records(assignment_id, policy_code, duration_seconds, started_at, deadline_at, acknowledged_at, status) VALUES ($1, 'acknowledgement', 86400, now() - interval '4 hours', ${deadline}, ${ackAt}, $2)`,
+      const slaRes = await client.query<{ id: string }>(
+        `INSERT INTO sla_records(assignment_id, policy_code, duration_seconds, started_at, deadline_at, acknowledged_at, status) VALUES ($1, 'acknowledgement', 86400, now() - interval '4 hours', ${deadline}, ${ackAt}, $2) RETURNING id`,
         [assignId, s.slaStatus]
       )
+      const slaId = slaRes.rows[0].id
 
       if (s.escalated) {
         await client.query(
-          "INSERT INTO escalation_events(organization_id, request_id, assignment_id, responsible_user_id, reason) VALUES ($1, $2, $3, $4, 'Acknowledgement SLA breach (24-hour window expired)')",
-          [org.id, reqId, assignId, s.assignee]
+          "INSERT INTO escalation_events(request_id, assignment_id, sla_record_id, responsible_user_id, policy_code, idempotency_key, reason) VALUES ($1, $2, $3, $4, 'acknowledgement', $5, 'Acknowledgement SLA breach (24-hour window expired)')",
+          [reqId, assignId, slaId, s.assignee, `seed-escalation-${s.ref}`]
         )
         await client.query(
-          "INSERT INTO audit_events(organization_id, request_id, assignment_id, actor_type, event_type, new_state) VALUES ($1, $2, $3, 'system', 'escalation_triggered', 'awaiting_acknowledgement')",
-          [org.id, reqId, assignId]
+          "INSERT INTO audit_events(organization_id, request_id, assignment_id, sla_record_id, actor_type, event_type, new_state) VALUES ($1, $2, $3, $4, 'system', 'escalation_triggered', 'awaiting_acknowledgement')",
+          [org.id, reqId, assignId, slaId]
         )
       }
     }

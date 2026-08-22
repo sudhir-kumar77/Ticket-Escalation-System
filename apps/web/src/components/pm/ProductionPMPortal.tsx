@@ -160,8 +160,8 @@ export function ProductionPMPortal({
   /* Development identity switcher — quiet footer utility */
   const devSwitcher =
     import.meta.env.DEV ? (
-      <div className="pt-2.5 border-t border-[#18293a] flex items-center gap-2 px-1">
-        <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-[#152332] text-[#38bdf8] border border-[#1e3a5f] flex-none">
+      <div className="pt-2 border-t border-[#141b22] flex items-center gap-2 px-1">
+        <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-[#131b24] text-emerald-400 border border-[#1f2d3d] flex-none">
           DEV
         </span>
         <select
@@ -170,35 +170,46 @@ export function ProductionPMPortal({
             sessionStorage.setItem(DEV_ACTOR_KEY, e.target.value)
             location.reload()
           }}
-          className="text-[11px] font-semibold text-slate-300 hover:text-white bg-[#101c28] border border-[#18293a] rounded-lg px-2 py-1 outline-none cursor-pointer flex-1 truncate transition-colors"
+          className="text-[11px] font-medium text-slate-300 bg-[#0e141a] border border-[#18222c] rounded-lg px-2 py-1 outline-none cursor-pointer flex-1 truncate transition-colors"
           title="Switch dev actor"
         >
-          <option value="pm" className="bg-[#0b131b] text-white">PM Session</option>
-          <option value="internal" className="bg-[#0b131b] text-white">Specialist Session</option>
+          <option value="pm" className="bg-[#0e141a] text-white">PM Session</option>
+          <option value="internal" className="bg-[#0e141a] text-white">Specialist Session</option>
         </select>
       </div>
     ) : null
+  const activeQueueCount = requests.filter((r) => r.workflowStatus !== 'resolved').length
 
-  /* ── Sidebar Navigation Content (Single Coherent System) ── */
-  const navContent = (
-    <div className="flex flex-col h-full">
+const navContent = (
+    <div className="flex flex-col h-full" style={{ 
+      background: 'var(--color-sidebar)', 
+      color: 'var(--color-sidebar-text)',
+      borderRight: '1px solid var(--color-sidebar-border)'
+    }}>
       {/* 1. Brand Identity Header */}
-      <div className="px-4 py-4 border-b border-[#18232e] flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <span className="w-6 h-6 rounded bg-[#10b981] text-[#064e3b] flex items-center justify-center font-bold text-[11.5px] flex-none shadow-xs">
+      <div style={{ 
+        padding: '0.75rem 1rem 0.875rem', 
+        borderBottom: '1px solid var(--color-sidebar-border)',
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'space-between'
+      }}>
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="w-7 h-7 rounded-lg bg-[#10b981] text-[#064e3b] flex items-center justify-center font-bold text-xs tracking-tight flex-none shadow-sm">
             N
           </span>
-          <div className="flex flex-col">
-            <span className="text-white font-bold text-[13.5px] tracking-tight leading-tight">
+          <div className="flex flex-col min-w-0">
+            <span className="font-semibold text-[13.5px] tracking-tight leading-tight truncate" style={{ color: 'var(--color-sidebar-text)' }}>
               Nvara Media
             </span>
-            <span className="text-[10.5px] font-medium text-[#64748b] leading-tight mt-0.5">
+            <span style={{ fontSize: '10.5px', fontWeight: 500, lineHeight: 'tight', marginTop: '0.125rem', color: 'var(--color-sidebar-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               Operations Workspace
             </span>
           </div>
         </div>
         <button
-          className="lg:hidden p-1 rounded text-[#94a3b8] hover:text-white transition-colors cursor-pointer"
+          type="button"
+          className="lg:hidden p-1 rounded text-[#64748b] hover:text-white transition-colors cursor-pointer"
           onClick={() => setMobileNavOpen(false)}
           aria-label="Close navigation"
         >
@@ -207,67 +218,76 @@ export function ProductionPMPortal({
       </div>
 
       {/* 2. Workspace Navigation */}
-      <div className="p-3 space-y-1">
-        <p className="px-2.5 pt-2 pb-1 text-[10px] font-bold uppercase tracking-widest text-[#475569]">
-          Workspace
-        </p>
-        <nav aria-label="Main navigation" className="space-y-1">
-          <NavItem
-            active={currentView === 'queue' && !selected}
-            icon={<QueueIcon />}
-            onClick={() => {
-              setCurrentView('queue')
-              setSelected(null)
-              setMobileNavOpen(false)
-            }}
-          >
-            {isPM ? 'Operations Queue' : 'My Queue'}
-          </NavItem>
+      <div className="p-3 space-y-4 flex-1 overflow-y-auto" style={{ color: 'var(--color-sidebar-text)' }}>
+        <div>
+          <p style={{ 
+            padding: '0.375rem 0.625rem 0.375rem', 
+            fontSize: '10px', 
+            fontWeight: 700, 
+            textTransform: 'uppercase', 
+            letterSpacing: '0.1em', 
+            marginBottom: '0.375rem',
+            color: 'var(--color-sidebar-text-muted)'
+          }}>
+            Workspace
+          </p>
+          <nav aria-label="Main navigation" className="space-y-1">
+            <NavItem
+              active={currentView === 'queue' && !selected}
+              icon={<QueueIcon />}
+              badge={activeQueueCount > 0 ? activeQueueCount : undefined}
+              onClick={() => {
+                setCurrentView('queue')
+                setSelected(null)
+                setMobileNavOpen(false)
+              }}
+            >
+              {isPM ? 'Operations Queue' : 'My Queue'}
+            </NavItem>
 
-          <NavItem
-            active={currentView === 'team'}
-            icon={
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                <circle cx="9" cy="7" r="4" />
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-              </svg>
-            }
-            onClick={() => {
-              setCurrentView('team')
-              setSelected(null)
-              setMobileNavOpen(false)
-            }}
-          >
-            {isPM ? 'Team Members' : 'Team Directory'}
-          </NavItem>
-        </nav>
+            <NavItem
+              active={currentView === 'team'}
+              icon={
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                </svg>
+              }
+              badge={members.length > 0 ? members.length : undefined}
+              onClick={() => {
+                setCurrentView('team')
+                setSelected(null)
+                setMobileNavOpen(false)
+              }}
+            >
+              {isPM ? 'Team Members' : 'Team Directory'}
+            </NavItem>
+          </nav>
+        </div>
       </div>
 
-      {/* 3. Flexible Center Space */}
-      <div className="flex-1" />
-
-      {/* 4. Integrated Account & Environment Footer */}
-      <div className="p-3 border-t border-[#18232e] space-y-3">
+      {/* 3. Integrated Account & Environment Footer */}
+      <div className="p-3 border-t border-[#141b22] space-y-2.5">
         {/* User Account Row */}
-        <div className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl bg-[#101c28] border border-[#18293a]">
+        <div className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl bg-[#0e141a] border border-[#18222c] hover:border-[#283848] transition-all shadow-2xs">
           <button
             type="button"
             onClick={() => setProfileModalOpen(true)}
-            className="flex items-center gap-2.5 min-w-0 flex-1 text-left cursor-pointer hover:opacity-85 transition-opacity"
+            className="flex items-center gap-2.5 min-w-0 flex-1 text-left cursor-pointer group"
             title="Account settings & change password"
           >
             <Avatar user={{ name: cleanName(user.name) }} size="sm" />
             <div className="min-w-0 flex-1">
-              <p className="text-slate-200 text-[12.5px] font-semibold truncate leading-tight flex items-center gap-1.5">
-                <span>{cleanName(user.name)}</span>
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-none">
+              <p className="text-slate-100 text-[12px] font-semibold truncate leading-tight flex items-center gap-1">
+                <span className="group-hover:text-emerald-400 transition-colors">{cleanName(user.name)}</span>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-none group-hover:stroke-emerald-400 transition-colors">
                   <circle cx="12" cy="12" r="3" />
                   <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
                 </svg>
               </p>
-              <p className="text-[11px] text-[#64748b] truncate leading-tight mt-0.5">
+              <p className="text-[10.5px] text-[#64748b] truncate leading-tight mt-0.5">
                 {user.role === 'project_manager' ? 'Project Manager' : 'Specialist'}
               </p>
             </div>
@@ -275,7 +295,7 @@ export function ProductionPMPortal({
           <button
             type="button"
             onClick={onSignOut || onBack}
-            className="p-1.5 rounded-lg text-[#64748b] hover:text-slate-200 hover:bg-[#152332] transition-colors cursor-pointer select-none flex-none"
+            className="p-1.5 rounded-lg text-[#64748b] hover:text-rose-400 hover:bg-[#18222c] transition-colors cursor-pointer select-none flex-none"
             title="Sign out"
             aria-label="Sign out"
           >
@@ -295,9 +315,9 @@ export function ProductionPMPortal({
 
   return (
     <div className="min-h-screen flex bg-[#f4f6f5] text-[#0b131b]">
-      {/* ── Desktop Sidebar (Fixed 236px Document Flow) ── */}
+      {/* ── Desktop Sidebar (Fixed 240px Document Flow) ── */}
       <aside
-        className="hidden lg:flex flex-col w-[236px] shrink-0 sticky top-0 h-screen z-20"
+        className="hidden lg:flex flex-col w-[240px] shrink-0 sticky top-0 h-screen z-20"
         style={{
           background: 'var(--color-sidebar)',
           borderRight: '1px solid var(--color-sidebar-border)',

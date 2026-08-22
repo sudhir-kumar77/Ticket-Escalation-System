@@ -108,8 +108,7 @@ export function registerClientRequestRoutes(app: FastifyInstance, pool: pg.Pool,
       const reference = publicReference();
       const created = await client.query<{ id: string; created_at: string }>('INSERT INTO requests(organization_id,public_reference,client_id,service_domain_id,requirement,urgency) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, created_at', [organizationId, reference, clientId, domain.rows[0].id, body.requirement, body.urgency]);
       const assignment = await client.query<{ id: string; assigned_at: string }>('INSERT INTO assignments(request_id,assignee_user_id) VALUES ($1,$2) RETURNING id, assigned_at', [created.rows[0].id, pmId]);
-      const sla = await client.query<{ id: string }>("INSERT INTO sla_records(assignment_id,policy_code,duration_seconds,started_at,deadline_at) VALUES ($1,'acknowledgement_24h',86400,$2::timestamptz,$2::timestamptz + interval '24 hours') RETURNING id", [assignment.rows[0].id, assignment.rows[0].assigned_at]);
-      const auditBase = [organizationId, created.rows[0].id, assignment.rows[0].id, sla.rows[0].id];
+      const auditBase = [organizationId, created.rows[0].id, assignment.rows[0].id, null];
       await client.query("INSERT INTO audit_events(organization_id,request_id,assignment_id,sla_record_id,actor_type,event_type,new_state,metadata,correlation_id) VALUES ($1,$2,$3,$4,'system','request_created','awaiting_acknowledgement',$5,$6)", [...auditBase, JSON.stringify({ source: 'client_submission' }), request.id]);
       await client.query("INSERT INTO audit_events(organization_id,request_id,assignment_id,sla_record_id,actor_type,event_type,new_state,metadata,correlation_id) VALUES ($1,$2,$3,$4,'system','assigned','awaiting_acknowledgement',$5,$6)", [...auditBase, JSON.stringify({ assignment: 'initial_project_manager' }), request.id]);
       const response: SafeResponse = { reference, createdAt: created.rows[0].created_at, status: 'received' };

@@ -146,6 +146,7 @@ export interface InvitationDetails {
   organizationName: string
   role: 'project_manager' | 'internal_team_member'
   inviterName: string
+  expiresAt?: string
 }
 
 export async function getInvitationDetails(token: string): Promise<InvitationDetails> {

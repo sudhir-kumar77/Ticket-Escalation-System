@@ -7,6 +7,7 @@ import {
   type ServiceDomain,
 } from '../../domain/ticket'
 import { ClientRequestApiError, type SubmissionConfirmation } from '../../services/clientRequestApi'
+import { generateSafeUUID } from '../../utils/uuid'
 
 const SERVICE_DOMAINS = Object.keys(SERVICE_DOMAIN_LABELS) as ServiceDomain[]
 
@@ -39,7 +40,7 @@ export function RequestForm({
   onSubmit(input: CreateRequestInput, idempotencyKey?: string): Promise<SubmissionConfirmation>
   onBack(): void
 }) {
-  const [idempotencyKey] = useState<string>(() => crypto.randomUUID())
+  const [idempotencyKey] = useState<string>(() => generateSafeUUID())
   const [form, setForm] = useState<CreateRequestInput>({
     clientName: '',
     company: '',

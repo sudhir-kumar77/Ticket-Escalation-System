@@ -107,17 +107,24 @@ export function NavItem({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
-      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all duration-100 select-none cursor-pointer group ${
+      className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-150 select-none cursor-pointer group relative ${
         active
-          ? 'bg-[#152332] text-white font-bold shadow-xs'
-          : 'text-[#8da0b0] hover:bg-[#101c28] hover:text-slate-100'
+          ? 'bg-[#16202c] text-white font-semibold shadow-xs border border-[#223244]'
+          : 'text-[#94a3b8] hover:bg-[#131b24] hover:text-white border border-transparent'
       }`}
     >
-      <div className="flex items-center gap-2.5 min-w-0">
+      {active && (
+        <span
+          className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r-md bg-[#10b981]"
+          aria-hidden="true"
+        />
+      )}
+      <div className="flex items-center gap-2.5 min-w-0 pl-0.5">
         <span
           className={`flex-none transition-colors ${
-            active ? 'text-[#10b981]' : 'text-[#5a6e7f] group-hover:text-slate-300'
+            active ? 'text-[#10b981]' : 'text-[#64748b] group-hover:text-[#cbd5e1]'
           }`}
         >
           {icon}
@@ -126,11 +133,11 @@ export function NavItem({
       </div>
       {typeof badge === 'number' && badge > 0 && (
         <span
-          className="px-2 py-0.5 rounded-full text-[10.5px] font-bold"
-          style={{
-            background: active ? 'rgba(16,185,129,0.25)' : 'rgba(255,255,255,0.08)',
-            color: active ? '#10b981' : '#8da0b0',
-          }}
+          className={`px-2 py-0.5 rounded-full text-[10.5px] font-semibold transition-colors ${
+            active
+              ? 'bg-[#10b981] text-[#064e3b]'
+              : 'bg-[#141b22] text-[#94a3b8] border border-[#223244]/60'
+          }`}
         >
           {badge}
         </span>

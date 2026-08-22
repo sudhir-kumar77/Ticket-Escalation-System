@@ -184,22 +184,21 @@ export function buildPublicDto(row: DtoRow): PublicTrackedRequest {
 // Per-instance labelling is intentional to avoid misleading "global guarantee"
 // semantics in a distributed context.
 
-const IP_LIMIT_PER_MIN    = 10
-const INSTANCE_LIMIT_PER_MIN = 200
-const WINDOW_MS           = 60_000
+const WINDOW_MS = 60_000
 
 interface Bucket { count: number; resetAt: number }
 const ipBuckets   = new Map<string, Bucket>()
 let instanceBucket: Bucket = { count: 0, resetAt: Date.now() + WINDOW_MS }
 
-function checkRateLimit(ip: string): { allowed: boolean; retryAfterSecs: number } {
+function checkRateLimit(ip: string, limit = 60): { allowed: boolean; retryAfterSecs: number } {
   const now = Date.now()
+  const instanceLimit = limit * 10
 
   // ── Per-instance endpoint floor ──────────────────────────────────────────
   if (now > instanceBucket.resetAt) {
     instanceBucket = { count: 0, resetAt: now + WINDOW_MS }
   }
-  if (instanceBucket.count >= INSTANCE_LIMIT_PER_MIN) {
+  if (instanceBucket.count >= instanceLimit) {
     return { allowed: false, retryAfterSecs: Math.ceil((instanceBucket.resetAt - now) / 1000) }
   }
 
@@ -209,7 +208,7 @@ function checkRateLimit(ip: string): { allowed: boolean; retryAfterSecs: number 
     bucket = { count: 0, resetAt: now + WINDOW_MS }
     ipBuckets.set(ip, bucket)
   }
-  if (bucket.count >= IP_LIMIT_PER_MIN) {
+  if (bucket.count >= limit) {
     return { allowed: false, retryAfterSecs: Math.ceil((bucket.resetAt - now) / 1000) }
   }
 
@@ -259,7 +258,7 @@ function canonicaliseReference(raw: string): string | null {
 export function registerPublicTrackerRoutes(
   app: FastifyInstance,
   pool: pg.Pool,
-  _config: AppConfig,
+  config: AppConfig,
 ): void {
   if (process.env.NODE_ENV !== 'production') {
     app.post('/v1/test/reset-tracker-rate-limit', async () => {
@@ -291,7 +290,7 @@ export function registerPublicTrackerRoutes(
       // for extracting real client IP behind a reverse proxy without manually
       // parsing X-Forwarded-For (which is spoofable without proxy trust config).
       const clientIp = request.ip
-      const rl = checkRateLimit(clientIp)
+      const rl = checkRateLimit(clientIp, config?.PUBLIC_RATE_LIMIT_PER_MINUTE || 60)
       if (!rl.allowed) {
         return reply
           .code(429)

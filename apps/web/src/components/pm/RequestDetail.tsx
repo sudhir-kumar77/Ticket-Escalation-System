@@ -296,19 +296,20 @@ export function RequestDetail({
                 All lifecycle deliverables have been closed and recorded in the audit trail.
               </p>
 
-              {/* Delete Resolved Request Button */}
+              {/* Archive Resolved Request Button */}
               {isPM && onDelete && (
                 <button
                   type="button"
                   onClick={() => setShowDeleteConfirm(true)}
                   disabled={busy}
-                  className="w-full py-2.5 px-3.5 rounded-xl bg-[#fff1f2] border border-[#ffe4e6] text-[#9f1239] text-[12.5px] font-semibold hover:bg-[#ffe4e6] transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  className="w-full py-2.5 px-3.5 rounded-xl bg-slate-100 hover:bg-slate-200/80 border border-slate-200 text-slate-700 text-[12.5px] font-semibold transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="3 6 5 6 21 6" />
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    <polyline points="21 8 21 21 3 21 3 8" />
+                    <rect x="1" y="3" width="22" height="5" />
+                    <line x1="10" y1="12" x2="14" y2="12" />
                   </svg>
-                  Delete Resolved Request
+                  Archive Request
                 </button>
               )}
             </div>
@@ -371,7 +372,7 @@ export function RequestDetail({
         </div>
       </div>
 
-      {/* ── Accessible Deletion Confirmation Modal Dialog ── */}
+      {/* ── Accessible Archive Confirmation Modal Dialog ── */}
       {showDeleteConfirm && (
         <div
           role="dialog"
@@ -380,17 +381,17 @@ export function RequestDetail({
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0f172a]/40 backdrop-blur-xs animate-fade-in"
         >
           <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-xl max-w-md w-full p-7 text-[#0f172a]">
-            <div className="flex items-center gap-3 mb-3 text-[#e11d48]">
-              <span className="w-9 h-9 rounded-full bg-[#fff1f2] border border-[#ffe4e6] flex items-center justify-center text-sm font-bold">
-                !
+            <div className="flex items-center gap-3 mb-3 text-slate-800">
+              <span className="w-9 h-9 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-sm font-bold">
+                📦
               </span>
               <h3 id="modal-delete-title" className="text-[17px] font-bold">
-                Permanently Delete Request?
+                Archive Request
               </h3>
             </div>
 
             <p className="text-[13.5px] text-[#64748b] leading-relaxed mb-7">
-              This action cannot be undone. Request <strong className="font-mono text-[#0f172a]">{request.id}</strong> and all associated audit history, SLA logs, and assignments will be permanently removed.
+              Request <strong className="font-mono text-[#0f172a]">{request.id}</strong> will be archived from active queues. All immutable audit history, SLA logs, and timestamps remain 100% preserved.
             </p>
 
             <div className="flex items-center justify-end gap-3">
@@ -409,9 +410,9 @@ export function RequestDetail({
                   setShowDeleteConfirm(false)
                 }}
                 disabled={busy}
-                className="px-4.5 py-2.5 rounded-xl bg-[#e11d48] hover:bg-[#be123c] text-white text-[13px] font-semibold shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-[13px] font-semibold shadow-xs transition-colors cursor-pointer disabled:opacity-50"
               >
-                {busy ? 'Deleting...' : 'Confirm Deletion'}
+                {busy ? 'Archiving...' : 'Confirm Archive'}
               </button>
             </div>
           </div>

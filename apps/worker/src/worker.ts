@@ -2,6 +2,7 @@ import pino from 'pino'
 import { loadConfig } from '@nvara/config'
 import { createDbPool } from '@nvara/db'
 import type pg from 'pg'
+import { createTransport, type Transporter, type SendMailOptions } from 'nodemailer'
 
 export type SlaEvaluation = {
   candidates: number
@@ -78,6 +79,101 @@ async function cleanupIdempotencyKeys(pool: pg.Pool, logger: pino.Logger): Promi
   return deletedCount
 }
 
+async function processEmailQueue(pool: pg.Pool, logger: pino.Logger, config: ReturnType<typeof loadConfig>): Promise<number> {
+  const MAX_ATTEMPTS = 5
+  const BATCH_SIZE = 10
+  let sentCount = 0
+  let queued: { rowCount: number | null; rows: any[] } | null = null
+
+  // Check if SMTP is configured
+  const hasSmtpConfig = config.EMAIL_HOST && config.EMAIL_USER && config.EMAIL_PASS
+  if (!hasSmtpConfig) {
+    // No SMTP configured - emails will remain queued
+    return 0
+  }
+
+  const transporter = createTransport({
+    host: config.EMAIL_HOST!,
+    port: config.EMAIL_PORT ?? 587,
+    secure: config.EMAIL_SECURE === true,
+    auth: { user: config.EMAIL_USER!, pass: config.EMAIL_PASS! },
+  })
+
+  // Verify SMTP connection
+  try {
+    await transporter.verify()
+  } catch (error) {
+    logger.error({ err: error }, 'SMTP connection failed, skipping email queue processing')
+    return 0
+  }
+
+  // Process queued emails
+  while (true) {
+    const client = await pool.connect()
+    try {
+      // Get a batch of queued emails
+      queued = await client.query<{ id: string; to_email: string; subject: string; html: string; text: string; metadata: any; attempts: number }>(
+        `SELECT id, to_email, subject, html, text, metadata, attempts
+         FROM email_queue
+         WHERE status = 'QUEUED' AND scheduled_at <= now()
+         ORDER BY scheduled_at
+         LIMIT $1 FOR UPDATE SKIP LOCKED`,
+        [BATCH_SIZE]
+      )
+
+      if (!queued?.rowCount) break
+
+      for (const email of queued.rows) {
+        let sent = false
+        try {
+          // Mark as sending
+          await client.query(`UPDATE email_queue SET status = 'SENDING', attempts = attempts + 1 WHERE id = $1`, [email.id])
+
+          const from = config.EMAIL_FROM ?? `Nvara Operations <noreply@${config.EMAIL_HOST!}>`
+          await transporter.sendMail({
+            from,
+            to: email.to_email,
+            subject: email.subject,
+            text: email.text,
+            html: email.html,
+          })
+
+          // Mark as sent
+          await client.query(`UPDATE email_queue SET status = 'SENT', sent_at = now(), updated_at = now() WHERE id = $1`, [email.id])
+          sent = true
+          sentCount++
+        } catch (error) {
+          if (!sent) {
+            const newAttempts = email.attempts + 1
+            if (newAttempts >= 5) {
+              await client.query(`UPDATE email_queue SET status = 'FAILED', last_error = $1, updated_at = now() WHERE id = $2`, [String(error), email.id])
+            } else {
+              // Schedule retry with exponential backoff
+              const delayMinutes = Math.min(15 * Math.pow(2, newAttempts - 1), 240) // Max 4 hours
+              await client.query(
+                `UPDATE email_queue SET status = 'QUEUED', last_error = $1, scheduled_at = now() + interval '${delayMinutes} minutes', updated_at = now() WHERE id = $2`,
+                [String(error), email.id]
+              )
+            }
+          }
+        }
+      }
+    } catch (error) {
+      logger.error({ err: error }, 'Email queue processing failed')
+    } finally {
+      client.release()
+    }
+
+    // If we processed less than a full batch, we're caught up
+    if ((queued?.rowCount ?? 0) < BATCH_SIZE) break
+  }
+
+  if (sentCount > 0) {
+    logger.info({ sentCount }, 'email queue processing completed')
+  }
+  return sentCount
+}
+
 export function startWorker() {
   const config = loadConfig()
   const logger = pino({ level: config.LOG_LEVEL })
@@ -86,10 +182,12 @@ export function startWorker() {
 
   const SHUTDOWN_TIMEOUT_MS = 30_000
   const CLEANUP_INTERVAL_MS = 60 * 60 * 1000 // 1 hour
+  const EMAIL_QUEUE_INTERVAL_MS = 30 * 1000 // 30 seconds
   let stopping = false
   let currentPollPromise: Promise<SlaEvaluation> | null = null
   let timer: ReturnType<typeof setTimeout> | undefined
   let cleanupTimer: ReturnType<typeof setTimeout> | undefined
+  let emailQueueTimer: ReturnType<typeof setTimeout> | undefined
   let retryCount = 0
 
   async function poll() {
@@ -126,15 +224,27 @@ export function startWorker() {
     if (!stopping) cleanupTimer = setTimeout(scheduleCleanup, CLEANUP_INTERVAL_MS)
   }
 
-  logger.info({ intervalSeconds: config.SLA_POLL_INTERVAL_SECONDS, batchSize: 100, cleanupIntervalHours: CLEANUP_INTERVAL_MS / 3_600_000 }, 'worker started')
+  async function scheduleEmailQueue() {
+    if (stopping) return
+    try {
+      await processEmailQueue(pool, logger, config)
+    } catch (error) {
+      logger.error({ err: error }, 'email queue processing failed')
+    }
+    if (!stopping) emailQueueTimer = setTimeout(scheduleEmailQueue, EMAIL_QUEUE_INTERVAL_MS)
+  }
+
+  logger.info({ intervalSeconds: config.SLA_POLL_INTERVAL_SECONDS, batchSize: 100, cleanupIntervalHours: CLEANUP_INTERVAL_MS / 3_600_000, emailQueueIntervalSeconds: EMAIL_QUEUE_INTERVAL_MS / 1000 }, 'worker started')
   void poll()
   void scheduleCleanup()
+  void scheduleEmailQueue()
 
   async function shutdown(signal: string) {
     if (stopping) return
     stopping = true
     if (timer) clearTimeout(timer)
     if (cleanupTimer) clearTimeout(cleanupTimer)
+    if (emailQueueTimer) clearTimeout(emailQueueTimer)
     logger.info({ signal }, 'worker shutting down')
 
     if (currentPollPromise) {

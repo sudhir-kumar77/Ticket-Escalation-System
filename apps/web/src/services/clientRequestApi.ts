@@ -1,4 +1,5 @@
 import type { ClientUrgency, CreateRequestInput, ServiceDomain } from '../domain/ticket'
+import { generateSafeUUID } from '../utils/uuid'
 
 export interface SubmissionConfirmation {
   reference: string
@@ -17,14 +18,14 @@ export class ClientRequestApiError extends Error {
 }
 
 function idempotencyKey() {
-  return crypto.randomUUID()
+  return generateSafeUUID()
 }
 
 export async function submitClientRequest(
   input: CreateRequestInput,
-  idempotencyKey?: string,
+  idempotencyKeyParam?: string,
 ): Promise<SubmissionConfirmation> {
-  const key = idempotencyKey || crypto.randomUUID()
+  const key = idempotencyKeyParam || generateSafeUUID()
 
   try {
     const response = await fetch('/v1/client/requests', {

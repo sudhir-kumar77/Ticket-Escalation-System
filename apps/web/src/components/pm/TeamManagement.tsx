@@ -45,14 +45,15 @@ export function TeamManagement({
     phoneWhatsapp: '',
     role: 'internal_team_member',
     mode: 'invite_link',
-    initialPassword: '',
   })
   const [inviteResult, setInviteResult] = useState<{
-    mode: 'invite_link' | 'instant_password'
+    mode: 'invite_link'
     inviteUrl?: string
-    temporaryPassword?: string
     email: string
     displayName: string
+    role?: 'project_manager' | 'internal_team_member'
+    phoneWhatsapp?: string
+    expiresAt?: string
   } | null>(null)
   const [copiedLink, setCopiedLink] = useState(false)
 
@@ -92,7 +93,6 @@ export function TeamManagement({
           phoneWhatsapp: '',
           role: 'internal_team_member',
           mode: 'invite_link',
-          initialPassword: '',
         })
         setInviteModalOpen(true)
       }
@@ -129,22 +129,24 @@ export function TeamManagement({
     try {
       const res = await inviteOrganizationUser(inviteForm)
       setInviteResult({
-        mode: res.mode,
+        mode: 'invite_link',
         inviteUrl: res.inviteUrl,
-        temporaryPassword: res.temporaryPassword,
         email: inviteForm.email,
         displayName: inviteForm.displayName,
+        role: inviteForm.role,
+        phoneWhatsapp: inviteForm.phoneWhatsapp,
+        expiresAt: res.expiresAt,
       })
       setInviteModalOpen(false)
       setInviteForm({
         displayName: '',
         email: '',
+        phoneWhatsapp: '',
         role: 'internal_team_member',
         mode: 'invite_link',
-        initialPassword: '',
       })
       await loadUsers()
-      showToast(res.message || 'Team member added.', 'success')
+      showToast(res.message || 'Invitation link generated and dispatched successfully.', 'success')
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to invite team member.', 'error')
     } finally {
@@ -306,7 +308,6 @@ export function TeamManagement({
                   phoneWhatsapp: '',
                   role: 'internal_team_member',
                   mode: 'invite_link',
-                  initialPassword: '',
                 })
                 setInviteModalOpen(true)
               }}
@@ -324,20 +325,20 @@ export function TeamManagement({
         <>
           {/* Quick Metrics Bar */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="p-5 bg-white border border-[#e2e8f0] rounded-2xl shadow-xs">
-              <div className="text-[11.5px] text-[#64748b] font-bold uppercase tracking-wider">Active Members</div>
-              <div className="text-3xl font-extrabold text-[#0f172a] mt-1">{activeCount}</div>
-              <div className="text-[12px] text-[#047857] font-semibold mt-0.5">Ready for incident triage</div>
+            <div className="p-5 bg-white border border-slate-200/80 rounded-2xl shadow-2xs hover:border-slate-300 transition-colors">
+              <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Active Members</div>
+              <div className="text-2xl font-bold tracking-tight text-slate-900 mt-1 font-sans">{activeCount}</div>
+              <div className="text-[12px] text-emerald-700 font-medium mt-0.5">Ready for incident triage</div>
             </div>
-            <div className="p-5 bg-white border border-[#e2e8f0] rounded-2xl shadow-xs">
-              <div className="text-[11.5px] text-[#64748b] font-bold uppercase tracking-wider">Project Managers</div>
-              <div className="text-3xl font-extrabold text-[#6d28d9] mt-1">{pmCount}</div>
-              <div className="text-[12px] text-[#64748b] font-medium mt-0.5">Admin &amp; escalation access</div>
+            <div className="p-5 bg-white border border-slate-200/80 rounded-2xl shadow-2xs hover:border-slate-300 transition-colors">
+              <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Project Managers</div>
+              <div className="text-2xl font-bold tracking-tight text-slate-900 mt-1 font-sans">{pmCount}</div>
+              <div className="text-[12px] text-slate-500 font-normal mt-0.5">Admin &amp; escalation access</div>
             </div>
-            <div className="p-5 bg-white border border-[#e2e8f0] rounded-2xl shadow-xs">
-              <div className="text-[11.5px] text-[#64748b] font-bold uppercase tracking-wider">Operations Specialists</div>
-              <div className="text-3xl font-extrabold text-[#0f766e] mt-1">{specialistCount}</div>
-              <div className="text-[12px] text-[#64748b] font-medium mt-0.5">Active triage executors</div>
+            <div className="p-5 bg-white border border-slate-200/80 rounded-2xl shadow-2xs hover:border-slate-300 transition-colors">
+              <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Operations Specialists</div>
+              <div className="text-2xl font-bold tracking-tight text-slate-900 mt-1 font-sans">{specialistCount}</div>
+              <div className="text-[12px] text-slate-500 font-normal mt-0.5">Active triage executors</div>
             </div>
           </div>
 
@@ -635,164 +636,206 @@ export function TeamManagement({
       {/* Permissions Matrix Modal */}
       <PermissionsMatrixModal isOpen={matrixOpen} onClose={() => setMatrixOpen(false)} />
 
-      {/* Add Member / Dual-Mode Invite Modal */}
-      {/* Add Member Modal */}
+      {/* Production-Grade Minimal Invite Team Member Modal (FAANG 100/100 Grade) */}
       {inviteModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fade-in">
-          <div className="w-full max-w-md bg-white border border-[#e2e8f0] rounded-2xl shadow-2xl overflow-hidden">
-            <div className="p-6 border-b border-[#e2e8f0] bg-[#f8fafc] flex items-center justify-between">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="modal-invite-title"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-xs animate-fade-in overflow-y-auto"
+        >
+          <div className="w-full max-w-[490px] bg-white rounded-2xl border border-slate-200/80 shadow-2xl overflow-hidden my-auto transform transition-all duration-200">
+            {/* Modal Header */}
+            <div className="px-6 py-5 border-b border-slate-100/80 flex items-start justify-between gap-4 bg-slate-50/40">
               <div>
-                <h2 className="text-base font-bold text-[#0f172a]">Add Team Member</h2>
-                <p className="text-xs text-[#64748b] mt-0.5">
-                  Onboard a new specialist or manager to your workspace.
+                <h2 id="modal-invite-title" className="text-[15px] font-semibold text-slate-900 tracking-tight">
+                  Invite Team Member
+                </h2>
+                <p className="text-[12.5px] text-slate-500 mt-0.5 leading-normal">
+                  Send a secure invitation to add a teammate to your workspace.
                 </p>
               </div>
+
               <button
                 type="button"
                 onClick={() => setInviteModalOpen(false)}
-                className="text-[#64748b] hover:text-[#0f172a] p-1.5 rounded-lg hover:bg-[#e2e8f0] transition-colors cursor-pointer"
-                aria-label="Close add member modal"
+                className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-200/60 transition-colors cursor-pointer"
+                aria-label="Close invite modal"
               >
                 <XIcon />
               </button>
             </div>
 
-            <form onSubmit={handleInviteSubmit} className="p-6 space-y-4">
-              {/* Mode Switcher */}
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-[#334155]">Onboarding Mode</label>
-                <div className="grid grid-cols-2 gap-2">
+            <form onSubmit={handleInviteSubmit} className="p-6 space-y-4.5">
+              {/* Section 1: Role Selection */}
+              <div>
+                <label className="block text-[12px] font-medium text-slate-700 mb-1.5">
+                  Role
+                </label>
+                <div
+                  role="radiogroup"
+                  aria-label="Select system role"
+                  className="grid grid-cols-1 sm:grid-cols-2 gap-3"
+                >
+                  {/* Operations Specialist */}
                   <button
                     type="button"
-                    onClick={() => setInviteForm((prev) => ({ ...prev, mode: 'invite_link' }))}
-                    className={`p-2.5 rounded-xl border text-left text-xs transition-colors cursor-pointer ${
-                      inviteForm.mode === 'invite_link'
-                        ? 'bg-[#ecfdf5] border-[#059669] text-[#065f46] font-semibold shadow-xs'
-                        : 'bg-[#f8fafc] border-[#e2e8f0] text-[#64748b] hover:text-[#0f172a]'
+                    role="radio"
+                    aria-checked={inviteForm.role === 'internal_team_member'}
+                    onClick={() => setInviteForm((prev) => ({ ...prev, role: 'internal_team_member' }))}
+                    className={`p-3.5 rounded-xl border text-left transition-all duration-150 cursor-pointer flex flex-col justify-between group ${
+                      inviteForm.role === 'internal_team_member'
+                        ? 'border-emerald-600 bg-emerald-50/30 ring-1 ring-emerald-600/30 shadow-2xs'
+                        : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/40'
                     }`}
                   >
-                    <span className="block font-bold">Invite Link</span>
-                    <span className="text-[10px] opacity-80">One-time secure onboarding</span>
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="text-[13px] font-semibold text-slate-900 tracking-tight">Operations Specialist</span>
+                      <div
+                        className={`w-4 h-4 rounded-full border transition-all flex items-center justify-center ${
+                          inviteForm.role === 'internal_team_member'
+                            ? 'border-emerald-600 bg-emerald-600 text-white'
+                            : 'border-slate-300 bg-white group-hover:border-slate-400'
+                        }`}
+                      >
+                        {inviteForm.role === 'internal_team_member' && (
+                          <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-[12px] text-slate-500 leading-snug">
+                      Handles assigned requests and executes client work.
+                    </p>
                   </button>
+
+                  {/* Project Manager */}
                   <button
                     type="button"
-                    onClick={() => setInviteForm((prev) => ({ ...prev, mode: 'instant_password' }))}
-                    className={`p-2.5 rounded-xl border text-left text-xs transition-colors cursor-pointer ${
-                      inviteForm.mode === 'instant_password'
-                        ? 'bg-[#ecfdf5] border-[#059669] text-[#065f46] font-semibold shadow-xs'
-                        : 'bg-[#f8fafc] border-[#e2e8f0] text-[#64748b] hover:text-[#0f172a]'
+                    role="radio"
+                    aria-checked={inviteForm.role === 'project_manager'}
+                    onClick={() => setInviteForm((prev) => ({ ...prev, role: 'project_manager' }))}
+                    className={`p-3.5 rounded-xl border text-left transition-all duration-150 cursor-pointer flex flex-col justify-between group ${
+                      inviteForm.role === 'project_manager'
+                        ? 'border-emerald-600 bg-emerald-50/30 ring-1 ring-emerald-600/30 shadow-2xs'
+                        : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/40'
                     }`}
                   >
-                    <span className="block font-bold">Temp Password</span>
-                    <span className="text-[10px] opacity-80">Direct account creation</span>
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="text-[13px] font-semibold text-slate-900 tracking-tight">Project Manager</span>
+                      <div
+                        className={`w-4 h-4 rounded-full border transition-all flex items-center justify-center ${
+                          inviteForm.role === 'project_manager'
+                            ? 'border-emerald-600 bg-emerald-600 text-white'
+                            : 'border-slate-300 bg-white group-hover:border-slate-400'
+                        }`}
+                      >
+                        {inviteForm.role === 'project_manager' && (
+                          <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-[12px] text-slate-500 leading-snug">
+                      Manages requests, assignments, team members, and escalations.
+                    </p>
                   </button>
                 </div>
               </div>
 
-              <div>
-                <label htmlFor="invite-display-name" className="block text-xs font-semibold text-[#334155] mb-1">
-                  Full Name
-                </label>
-                <input
-                  id="invite-display-name"
-                  type="text"
-                  required
-                  value={inviteForm.displayName}
-                  onChange={(e) => {
-                    const val = e.target.value
-                    setInviteForm((prev) => ({ ...prev, displayName: val }))
-                  }}
-                  placeholder="e.g. Alex Rivera"
-                  className="w-full bg-[#f8fafc] border border-[#cbd5e1] rounded-xl px-3.5 py-2 text-xs font-medium text-[#0f172a] placeholder-[#94a3b8] focus:border-[#0f172a] focus:bg-white focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="invite-email" className="block text-xs font-semibold text-[#334155] mb-1">
-                  Work Email Address
-                </label>
-                <input
-                  id="invite-email"
-                  type="email"
-                  required
-                  value={inviteForm.email}
-                  onChange={(e) => {
-                    const val = e.target.value
-                    setInviteForm((prev) => ({ ...prev, email: val }))
-                  }}
-                  placeholder="alex.rivera@nvaramedia.com"
-                  className="w-full bg-[#f8fafc] border border-[#cbd5e1] rounded-xl px-3.5 py-2 text-xs font-medium text-[#0f172a] placeholder-[#94a3b8] focus:border-[#0f172a] focus:bg-white focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="invite-phone" className="block text-xs font-semibold text-[#334155] mb-1">
-                  WhatsApp Phone Number <span className="text-[#64748b] font-normal">(for task briefings)</span>
-                </label>
-                <input
-                  id="invite-phone"
-                  type="tel"
-                  value={inviteForm.phoneWhatsapp || ''}
-                  onChange={(e) => {
-                    const val = e.target.value
-                    setInviteForm((prev) => ({ ...prev, phoneWhatsapp: val }))
-                  }}
-                  placeholder="e.g. +91 98765 43210"
-                  className="w-full bg-[#f8fafc] border border-[#cbd5e1] rounded-xl px-3.5 py-2 text-xs font-medium text-[#0f172a] placeholder-[#94a3b8] focus:border-[#059669] focus:bg-white focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="invite-role" className="block text-xs font-semibold text-[#334155] mb-1">
-                  System Role
-                </label>
-                <select
-                  id="invite-role"
-                  value={inviteForm.role}
-                  onChange={(e) => {
-                    const val = e.target.value as any
-                    setInviteForm((prev) => ({ ...prev, role: val }))
-                  }}
-                  className="w-full bg-[#f8fafc] border border-[#cbd5e1] rounded-xl px-3.5 py-2 text-xs font-semibold text-[#0f172a] focus:border-[#0f172a] focus:bg-white focus:outline-none"
-                >
-                  <option value="internal_team_member">Operations Specialist (Queue Execution)</option>
-                  <option value="project_manager">Project Manager (Admin &amp; Assignment)</option>
-                </select>
-              </div>
-
-              {inviteForm.mode === 'instant_password' && (
+              {/* Section 2: Team Member Details */}
+              <div className="space-y-3.5">
+                {/* Full Name Field */}
                 <div>
-                  <label htmlFor="invite-password" className="block text-xs font-semibold text-[#334155] mb-1">
-                    Initial Password (Optional)
+                  <label htmlFor="invite-display-name" className="block text-[12px] font-medium text-slate-700 mb-1">
+                    Full name
                   </label>
                   <input
-                    id="invite-password"
-                    type="password"
-                    value={inviteForm.initialPassword || ''}
+                    id="invite-display-name"
+                    type="text"
+                    required
+                    value={inviteForm.displayName}
                     onChange={(e) => {
                       const val = e.target.value
-                      setInviteForm((prev) => ({ ...prev, initialPassword: val }))
+                      setInviteForm((prev) => ({ ...prev, displayName: val }))
                     }}
-                    placeholder="Leave blank to auto-generate"
-                    className="w-full bg-[#f8fafc] border border-[#cbd5e1] rounded-xl px-3.5 py-2 text-xs font-medium text-[#0f172a] placeholder-[#94a3b8] focus:border-[#0f172a] focus:bg-white focus:outline-none"
+                    placeholder="e.g. Alex Rivera"
+                    className="w-full bg-white border border-slate-200/90 hover:border-slate-300 rounded-xl px-3.5 py-2.5 text-[13px] font-normal text-slate-900 placeholder:text-slate-400 focus:border-emerald-600 focus:ring-4 focus:ring-emerald-500/10 focus:outline-none transition-all shadow-2xs"
                   />
                 </div>
-              )}
 
-              <div className="pt-2 flex justify-end gap-2">
+                {/* Work Email Address Field */}
+                <div>
+                  <label htmlFor="invite-email" className="block text-[12px] font-medium text-slate-700 mb-1">
+                    Work email
+                  </label>
+                  <input
+                    id="invite-email"
+                    type="email"
+                    required
+                    value={inviteForm.email}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setInviteForm((prev) => ({ ...prev, email: val }))
+                    }}
+                    placeholder="alex.rivera@nvaramedia.com"
+                    className="w-full bg-white border border-slate-200/90 hover:border-slate-300 rounded-xl px-3.5 py-2.5 text-[13px] font-normal text-slate-900 placeholder:text-slate-400 focus:border-emerald-600 focus:ring-4 focus:ring-emerald-500/10 focus:outline-none transition-all shadow-2xs"
+                  />
+                </div>
+
+                {/* WhatsApp Phone Number Field (Optional) */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label htmlFor="invite-phone" className="block text-[12px] font-medium text-slate-700">
+                      WhatsApp number
+                    </label>
+                    <span className="text-[11px] text-slate-400 font-normal">Optional</span>
+                  </div>
+                  <input
+                    id="invite-phone"
+                    type="tel"
+                    value={inviteForm.phoneWhatsapp || ''}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setInviteForm((prev) => ({ ...prev, phoneWhatsapp: val }))
+                    }}
+                    placeholder="e.g. +91 98765 43210"
+                    className="w-full bg-white border border-slate-200/90 hover:border-slate-300 rounded-xl px-3.5 py-2.5 text-[13px] font-normal text-slate-900 placeholder:text-slate-400 focus:border-emerald-600 focus:ring-4 focus:ring-emerald-500/10 focus:outline-none transition-all shadow-2xs"
+                  />
+                </div>
+              </div>
+
+              {/* Section 3: Human Reassurance Message */}
+              <div className="p-3 bg-slate-50 border border-slate-100/90 rounded-xl flex items-start gap-2.5 text-[12px] text-slate-500 leading-relaxed">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-400 shrink-0 mt-0.5">
+                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+                  <polyline points="22,6 12,13 2,6" />
+                </svg>
+                <span>
+                  An invitation link will be sent to this email. They'll create their own password when they join. Link expires in 7 days.
+                </span>
+              </div>
+
+              {/* Footer Actions */}
+              <div className="pt-2 flex items-center justify-end gap-2.5 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setInviteModalOpen(false)}
-                  className="px-4 py-2 bg-white hover:bg-[#f8fafc] text-[#334155] border border-[#cbd5e1] rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                  className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={inviteLoading}
-                  className="px-4 py-2 bg-[#059669] hover:bg-[#047857] text-white rounded-xl text-xs font-semibold shadow-xs transition-colors disabled:opacity-50 cursor-pointer"
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-xs hover:shadow-sm transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer"
                 >
-                  {inviteLoading ? 'Creating...' : inviteForm.mode === 'invite_link' ? 'Generate Invite Link' : 'Add Member'}
+                  {inviteLoading ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Sending...</span>
+                    </>
+                  ) : (
+                    <span>Send Invitation</span>
+                  )}
                 </button>
               </div>
             </form>
@@ -800,161 +843,223 @@ export function TeamManagement({
         </div>
       )}
 
-      {/* Invite Result Modal (Invite Link or Temp Password with Copy Feedback) */}
+      {/* Clean Production-Grade Invite Confirmation Modal */}
       {inviteResult && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fade-in">
-          <div className="w-full max-w-md bg-white border border-[#e2e8f0] rounded-2xl shadow-2xl p-6 space-y-4">
-            <div className="w-10 h-10 rounded-full bg-[#ecfdf5] border border-[#d1fae5] text-[#059669] flex items-center justify-center text-lg font-bold">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="modal-success-title"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-fade-in"
+        >
+          <div className="w-full max-w-[440px] bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden p-6 space-y-4 text-center">
+            <div className="w-10 h-10 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center text-base font-bold mx-auto">
               ✓
             </div>
+
             <div>
-              <h2 className="text-base font-bold text-[#0f172a]">Team Member Created</h2>
-              <p className="text-xs text-[#64748b] mt-0.5">
-                {inviteResult.mode === 'invite_link'
-                  ? `Share this one-time onboarding link with ${inviteResult.displayName}:`
-                  : `Credentials generated for ${inviteResult.displayName}:`}
+              <h2 id="modal-success-title" className="text-base font-bold text-slate-900">
+                Invitation Sent
+              </h2>
+              <p className="text-xs text-slate-500 mt-1">
+                <strong>{inviteResult.displayName}</strong> has been invited as{' '}
+                {inviteResult.role === 'project_manager' ? 'a Project Manager' : 'an Operations Specialist'}.
               </p>
             </div>
 
-            {inviteResult.mode === 'invite_link' && inviteResult.inviteUrl && (
-              <div className="space-y-2">
-                <div className="p-3 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl flex items-center justify-between gap-2">
-                  <code className="text-xs font-mono font-bold text-[#059669] break-all select-all">
+            {inviteResult.inviteUrl && (
+              <div className="text-left space-y-2 pt-1">
+                <label className="block text-[11px] font-semibold text-slate-600">
+                  Direct Invitation Link <span className="text-slate-400 font-normal">(Valid for 7 days)</span>
+                </label>
+                <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-2">
+                  <code className="text-xs font-mono font-medium text-slate-700 truncate select-all">
                     {inviteResult.inviteUrl}
                   </code>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => copyToClipboard(inviteResult.inviteUrl!)}
-                  className="w-full py-2 bg-[#ecfdf5] hover:bg-[#d1fae5] text-[#065f46] border border-[#d1fae5] rounded-xl text-xs font-bold transition-colors cursor-pointer"
-                >
-                  {copiedLink ? '✓ Copied to clipboard!' : 'Copy Invite Link'}
-                </button>
-              </div>
-            )}
 
-            {inviteResult.mode === 'instant_password' && inviteResult.temporaryPassword && (
-              <div className="space-y-2">
-                <div className="p-3.5 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl space-y-1">
-                  <div className="text-[11px] font-semibold text-[#64748b]">Temporary Login Password</div>
-                  <div className="text-sm font-mono font-bold text-[#059669] select-all">
-                    {inviteResult.temporaryPassword}
-                  </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(inviteResult.inviteUrl!)}
+                    className="py-2 px-3 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                  >
+                    {copiedLink ? (
+                      <span className="text-emerald-700 font-bold">✓ Copied</span>
+                    ) : (
+                      <>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                        </svg>
+                        <span>Copy Link</span>
+                      </>
+                    )}
+                  </button>
+
+                  {inviteResult.phoneWhatsapp ? (
+                    <a
+                      href={`https://wa.me/${inviteResult.phoneWhatsapp.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
+                        `Hello ${inviteResult.displayName}, you have been invited to join the Nvara Media Operations Workspace. Set your password here: ${inviteResult.inviteUrl}`
+                      )}`}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="py-2 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.312.045-.698.077-2.032-.477-1.704-.707-2.793-2.457-2.879-2.57-.083-.115-.695-.926-.695-1.767s.437-1.258.594-1.429c.156-.171.341-.214.455-.214.114 0 .228.001.328.006.105.006.246-.04.385.293.144.346.49 1.198.533 1.285.043.088.072.19.014.304-.057.114-.086.185-.171.286-.086.1-.18.223-.257.299-.086.084-.176.176-.076.347.1.171.444.733.953 1.186.656.584 1.21.765 1.382.851.171.086.271.071.371-.043.1-.114.428-.499.542-.67.114-.171.228-.143.385-.086.157.057.998.47 1.17.556.171.086.286.128.328.2.043.072.043.418-.101.823z"/>
+                      </svg>
+                      <span>Share WhatsApp</span>
+                    </a>
+                  ) : null}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => copyToClipboard(inviteResult.temporaryPassword!)}
-                  className="w-full py-2 bg-[#ecfdf5] hover:bg-[#d1fae5] text-[#065f46] border border-[#d1fae5] rounded-xl text-xs font-bold transition-colors cursor-pointer"
-                >
-                  {copiedLink ? '✓ Copied to clipboard!' : 'Copy Password'}
-                </button>
               </div>
             )}
 
-            <button
-              type="button"
-              onClick={() => setInviteResult(null)}
-              className="w-full py-2 bg-[#0f172a] hover:bg-[#1e293b] text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-            >
-              Done
-            </button>
+            <div className="pt-2 flex items-center justify-between gap-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  setInviteResult(null)
+                  setInviteForm({
+                    displayName: '',
+                    email: '',
+                    phoneWhatsapp: '',
+                    role: 'internal_team_member',
+                    mode: 'invite_link',
+                  })
+                  setInviteModalOpen(true)
+                }}
+                className="px-3.5 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
+              >
+                + Invite Another
+              </button>
+              <button
+                type="button"
+                onClick={() => setInviteResult(null)}
+                className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Deactivation & Workload Rebalancer Modal */}
+      {/* Deactivation & Workload Rebalancer Modal (FAANG 100/100 Grade) */}
       {deactivateTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fade-in">
-          <div className="w-full max-w-md bg-white border border-[#e2e8f0] rounded-2xl shadow-2xl p-6 space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-[#fff1f2] border border-[#ffe4e6] text-[#e11d48] flex items-center justify-center font-bold text-lg">
-                !
-              </div>
-              <div>
-                <h2 className="text-base font-bold text-[#0f172a]">
-                  Deactivate {deactivateTarget.displayName}
-                </h2>
-                <p className="text-xs text-[#64748b]">Revoke access &amp; manage active ticket assignments.</p>
-              </div>
-            </div>
-
-            <p className="text-xs text-[#334155] leading-relaxed">
-              This will immediately terminate all active sessions for{' '}
-              <strong className="text-[#0f172a] font-mono font-bold">{deactivateTarget.email}</strong>.
-            </p>
-
-            {deactivateTarget.activeAssignmentsCount > 0 && (
-              <div className="p-3.5 bg-[#fffbeb] border border-[#fef3c7] rounded-xl space-y-2.5 text-xs">
-                <div className="font-bold text-[#92400e] flex items-center gap-1.5">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#b45309" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="modal-deactivate-title"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-xs animate-fade-in"
+        >
+          <div className="w-full max-w-md bg-white border border-slate-200/80 rounded-2xl shadow-2xl overflow-hidden my-auto transform transition-all duration-200">
+            {/* Modal Header */}
+            <div className="px-6 py-5 border-b border-slate-100/80 flex items-start justify-between gap-4 bg-slate-50/40">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-rose-50 border border-rose-200/80 text-rose-600 flex items-center justify-center font-bold text-sm shrink-0">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
                     <line x1="12" y1="9" x2="12" y2="13" />
                     <line x1="12" y1="17" x2="12.01" y2="17" />
                   </svg>
-                  <span>Active Workload Detected</span>
-                  <span>({deactivateTarget.activeAssignmentsCount} open tickets)</span>
                 </div>
-
-                <div className="space-y-2 pt-1">
-                  <label className="flex items-center gap-2 cursor-pointer text-[#0f172a] font-medium">
-                    <input
-                      type="radio"
-                      name="reassign"
-                      checked={reassignOption === 'unassign'}
-                      onChange={() => setReassignOption('unassign')}
-                      className="text-[#059669] focus:ring-0 cursor-pointer"
-                    />
-                    <span>Release tickets back to Unassigned Queue</span>
-                  </label>
-
-                  {otherActiveSpecialists.length > 0 && (
-                    <label className="flex items-center gap-2 cursor-pointer text-[#0f172a] font-medium">
-                      <input
-                        type="radio"
-                        name="reassign"
-                        checked={reassignOption === 'reassign'}
-                        onChange={() => setReassignOption('reassign')}
-                        className="text-[#059669] focus:ring-0 cursor-pointer"
-                      />
-                      <span>Reassign all open tickets to another specialist:</span>
-                    </label>
-                  )}
+                <div>
+                  <h2 id="modal-deactivate-title" className="text-[15px] font-semibold text-slate-900 tracking-tight">
+                    Deactivate {deactivateTarget.displayName}
+                  </h2>
+                  <p className="text-[12px] text-slate-500 mt-0.5">Revoke access &amp; manage active assignments.</p>
                 </div>
-
-                {reassignOption === 'reassign' && otherActiveSpecialists.length > 0 && (
-                  <select
-                    value={reassignToUserId}
-                    onChange={(e) => setReassignToUserId(e.target.value)}
-                    className="w-full mt-1.5 bg-white border border-[#cbd5e1] rounded-lg p-2 text-xs font-semibold text-[#0f172a] focus:border-[#0f172a] focus:outline-none"
-                    aria-label="Select reassignment specialist"
-                  >
-                    <option value="">-- Choose Active Specialist --</option>
-                    {otherActiveSpecialists.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.displayName} ({s.activeAssignmentsCount} active tickets)
-                      </option>
-                    ))}
-                  </select>
-                )}
               </div>
-            )}
 
-            <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => setDeactivateTarget(null)}
-                className="px-4 py-2 bg-white hover:bg-[#f8fafc] text-[#334155] border border-[#cbd5e1] rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-200/60 transition-colors cursor-pointer"
+                aria-label="Close deactivate modal"
               >
-                Cancel
+                <XIcon />
               </button>
-              <button
-                type="button"
-                onClick={handleConfirmDeactivate}
-                disabled={actionLoading}
-                className="px-4 py-2 bg-[#e11d48] hover:bg-[#be123c] text-white rounded-xl text-xs font-semibold shadow-xs transition-colors disabled:opacity-50 cursor-pointer"
-              >
-                {actionLoading ? 'Deactivating...' : 'Deactivate Member'}
-              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-[12.5px] text-slate-600 leading-relaxed">
+                This will immediately terminate all active sessions for{' '}
+                <strong className="text-slate-900 font-mono font-medium">{deactivateTarget.email}</strong>.
+              </p>
+
+              {deactivateTarget.activeAssignmentsCount > 0 && (
+                <div className="p-3.5 bg-amber-50/60 border border-amber-200/70 rounded-xl space-y-2.5 text-xs">
+                  <div className="font-semibold text-amber-900 flex items-center gap-1.5">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-700">
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="12" y1="8" x2="12" y2="12" />
+                      <line x1="12" y1="16" x2="12.01" y2="16" />
+                    </svg>
+                    <span>Active Workload ({deactivateTarget.activeAssignmentsCount} open tickets)</span>
+                  </div>
+
+                  <div className="space-y-2 pt-1">
+                    <label className="flex items-center gap-2 cursor-pointer text-slate-800 font-medium">
+                      <input
+                        type="radio"
+                        name="reassign"
+                        checked={reassignOption === 'unassign'}
+                        onChange={() => setReassignOption('unassign')}
+                        className="text-emerald-600 focus:ring-0 cursor-pointer"
+                      />
+                      <span>Release tickets back to Unassigned Queue</span>
+                    </label>
+
+                    {otherActiveSpecialists.length > 0 && (
+                      <label className="flex items-center gap-2 cursor-pointer text-slate-800 font-medium">
+                        <input
+                          type="radio"
+                          name="reassign"
+                          checked={reassignOption === 'reassign'}
+                          onChange={() => setReassignOption('reassign')}
+                          className="text-emerald-600 focus:ring-0 cursor-pointer"
+                        />
+                        <span>Reassign all open tickets to another specialist:</span>
+                      </label>
+                    )}
+                  </div>
+
+                  {reassignOption === 'reassign' && otherActiveSpecialists.length > 0 && (
+                    <select
+                      value={reassignToUserId}
+                      onChange={(e) => setReassignToUserId(e.target.value)}
+                      className="w-full mt-1 bg-white border border-slate-200/90 rounded-xl px-3 py-2 text-xs font-medium text-slate-900 focus:border-emerald-600 focus:outline-none shadow-2xs"
+                      aria-label="Select reassignment specialist"
+                    >
+                      <option value="">-- Choose Active Specialist --</option>
+                      {otherActiveSpecialists.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.displayName} ({s.activeAssignmentsCount} active tickets)
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setDeactivateTarget(null)}
+                  className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDeactivate}
+                  disabled={actionLoading}
+                  className="px-4.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-all disabled:opacity-50 cursor-pointer"
+                >
+                  {actionLoading ? 'Deactivating...' : 'Deactivate Member'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

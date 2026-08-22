@@ -16,7 +16,7 @@
  *   API_URL=http://127.0.0.1:4000 node tests/integration/tracker_security.mjs
  */
 
-const API_URL = process.env.API_URL ?? 'http://127.0.0.1:4000'
+const API_URL = process.env.API_URL ?? process.env.API_ORIGIN ?? 'http://127.0.0.1:4001'
 
 let passed = 0
 let failed = 0
@@ -203,7 +203,7 @@ if (TEST_REFERENCE) {
 // ── Rate Limiting ─────────────────────────────────────────────────────────────
 console.log('\nRate Limiting')
 
-await fetch('http://127.0.0.1:4000/v1/test/reset-tracker-rate-limit', { method: 'POST' }).catch(() => {})
+await fetch(`${API_URL}/v1/test/reset-tracker-rate-limit`, { method: 'POST' }).catch(() => {})
 
 await t('11th request within 60s window from same IP → 429 with Retry-After', async () => {
   // Send 10 requests (the limit) — these should all succeed or 404
@@ -221,7 +221,7 @@ await t('11th request within 60s window from same IP → 429 with Retry-After', 
   assertEqual(body.error, 'RATE_LIMITED')
 })
 
-await fetch('http://127.0.0.1:4000/v1/test/reset-tracker-rate-limit', { method: 'POST' }).catch(() => {})
+await fetch(`${API_URL}/v1/test/reset-tracker-rate-limit`, { method: 'POST' }).catch(() => {})
 
 // ── Summary ───────────────────────────────────────────────────────────────────
 

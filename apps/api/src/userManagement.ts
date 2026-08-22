@@ -27,14 +27,7 @@ const inviteUserSchema = z.object({
   email: z.string().trim().email('A valid email address is required.'),
   phoneWhatsapp: z.string().trim().optional().nullable(),
   role: z.enum(['project_manager', 'internal_team_member']),
-  mode: z.enum(['invite_link', 'instant_password']).default('invite_link'),
-  initialPassword: z
-    .string()
-    .optional()
-    .transform((v) => (v && v.trim().length > 0 ? v.trim() : undefined))
-    .refine((v) => !v || v.length >= 8, {
-      message: 'Password must be at least 8 characters.',
-    }),
+  mode: z.literal('invite_link').default('invite_link'),
 })
 
 const updateUserSchema = z.object({
@@ -45,11 +38,48 @@ const updateUserSchema = z.object({
   reassignToUserId: z.string().uuid().nullable().optional(),
 })
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export function registerUserManagementRoutes(
   app: FastifyInstance,
   pool: pg.Pool,
   config: AppConfig
 ) {
+  const isProd = config.NODE_ENV === 'production'
+  const inviteRateLimitMap = new Map<string, { count: number; resetAt: number }>()
+
+  function checkInviteRateLimit(orgId: string) {
+    if (!isProd) return
+    const now = Date.now()
+    const record = inviteRateLimitMap.get(orgId)
+    if (!record) return
+
+    if (now > record.resetAt) {
+      inviteRateLimitMap.delete(orgId)
+      return
+    }
+
+    if (record.count >= 20) {
+      const retryAfterSec = Math.ceil((record.resetAt - now) / 1000)
+      throw new ApiError(
+        429,
+        'RATE_LIMITED',
+        `Too many invitation requests. Please wait ${retryAfterSec} seconds before sending more invites.`
+      )
+    }
+  }
+
+  function recordInvite(orgId: string) {
+    if (!isProd) return
+    const now = Date.now()
+    const record = inviteRateLimitMap.get(orgId)
+    if (!record || now > record.resetAt) {
+      inviteRateLimitMap.set(orgId, { count: 1, resetAt: now + 60 * 1000 })
+    } else {
+      record.count += 1
+    }
+  }
+
   // GET /v1/pm/users — List all organization members with SLA and workload metrics
   app.get('/v1/pm/users', async (request: FastifyRequest) => {
     const user = await authenticatePm(request, pool, config)
@@ -85,15 +115,22 @@ export function registerUserManagementRoutes(
       JOIN user_roles ur ON ur.user_id = u.id
       JOIN roles r ON r.id = ur.role_id
       LEFT JOIN LATERAL (
-        SELECT COUNT(*)::int AS cnt
-        FROM assignments
-        WHERE assignee_user_id = u.id AND ended_at IS NULL
+        SELECT COUNT(a.id)::int AS cnt
+        FROM assignments a
+        JOIN requests req ON req.id = a.request_id
+        WHERE a.assignee_user_id = u.id
+          AND a.ended_at IS NULL
+          AND req.status != 'resolved'
+          AND req.deleted_at IS NULL
       ) act ON true
       LEFT JOIN LATERAL (
-        SELECT COUNT(*)::int AS cnt,
-               AVG(EXTRACT(EPOCH FROM (ended_at - assigned_at))) AS avg_resolution_seconds
-        FROM assignments
-        WHERE assignee_user_id = u.id AND ended_at IS NOT NULL
+        SELECT COUNT(DISTINCT req.id)::int AS cnt,
+               AVG(EXTRACT(EPOCH FROM (COALESCE(req.resolved_at, a.ended_at, req.updated_at) - a.assigned_at))) AS avg_resolution_seconds
+        FROM assignments a
+        JOIN requests req ON req.id = a.request_id
+        WHERE (a.assignee_user_id = u.id OR req.resolved_by_user_id = u.id)
+          AND req.status = 'resolved'
+          AND req.deleted_at IS NULL
       ) res ON true
       LEFT JOIN LATERAL (
         SELECT COUNT(s.id)::int AS total_sla,
@@ -145,6 +182,10 @@ export function registerUserManagementRoutes(
   app.get<{ Params: { id: string } }>('/v1/pm/users/:id/detail', async (request, reply) => {
     const actor = await authenticatePm(request, pool, config)
     const targetUserId = String(request.params.id)
+
+    if (!UUID_REGEX.test(targetUserId)) {
+      throw new ApiError(404, 'USER_NOT_FOUND', 'Team member not found.')
+    }
 
     const userRes = await pool.query<{
       id: string
@@ -230,7 +271,7 @@ export function registerUserManagementRoutes(
     }
   })
 
-  // POST /v1/pm/users/invite — Dual-Mode Onboarding (Invite Link or Instant Password)
+  // POST /v1/pm/users/invite — Invite Link Onboarding (Instant Password mode deprecated)
   app.post('/v1/pm/users/invite', async (request: FastifyRequest, reply) => {
     const actor = await authenticatePm(request, pool, config)
 
@@ -238,44 +279,58 @@ export function registerUserManagementRoutes(
       throw new ApiError(403, 'FORBIDDEN', 'Only Project Managers can add or invite team members.')
     }
 
-    const parseResult = inviteUserSchema.safeParse(request.body)
+    checkInviteRateLimit(actor.organizationId)
+
+    const rawBody = (request.body || {}) as any
+    if (rawBody.mode === 'instant_password') {
+      throw new ApiError(400, 'INSTANT_PASSWORD_DEPRECATED', 'Instant password mode is deprecated. Please use invite_link mode.')
+    }
+
+    const parseResult = inviteUserSchema.safeParse(rawBody)
     if (!parseResult.success) {
       const firstError = parseResult.error.errors[0]?.message || 'Invalid input.'
       throw new ApiError(400, 'INVALID_INPUT', firstError)
     }
 
-    const { displayName, email, role, mode, initialPassword, phoneWhatsapp } = parseResult.data
+    const { displayName, email, role, phoneWhatsapp } = parseResult.data
     const normalizedEmail = email.toLowerCase()
 
-    // Check email uniqueness within organization
-    const existing = await pool.query(
-      'SELECT id FROM users WHERE organization_id = $1 AND LOWER(email) = LOWER($2)',
-      [actor.organizationId, normalizedEmail]
-    )
+    // Concurrency-safe atomic transaction with FOR UPDATE
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
 
-    if (existing.rowCount && existing.rowCount > 0) {
-      throw new ApiError(409, 'EMAIL_EXISTS', 'A user with this email address already exists in the organization.')
-    }
-
-    // Role lookup
-    const roleRes = await pool.query<{ id: string }>('SELECT id FROM roles WHERE code = $1', [role])
-    if (!roleRes.rowCount) {
-      throw new ApiError(500, 'ROLE_NOT_FOUND', `Role definition for ${role} not found.`)
-    }
-    const roleId = roleRes.rows[0].id
-
-    // Mode A: Invite Link (Zero-shared secret with 7-day TTL)
-    if (mode === 'invite_link') {
-      const { rawToken, tokenHash } = generateInvitationToken()
-      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
-
-      // Invalidate any older pending invitations for this email in this org
-      await pool.query(
-        'DELETE FROM user_invitations WHERE organization_id = $1 AND LOWER(email) = LOWER($2) AND accepted_at IS NULL',
+      // Check email uniqueness within organization
+      const existing = await client.query(
+        'SELECT id FROM users WHERE organization_id = $1 AND LOWER(email) = LOWER($2) FOR UPDATE',
         [actor.organizationId, normalizedEmail]
       )
 
-      await pool.query(
+      if (existing.rowCount && existing.rowCount > 0) {
+        await client.query('ROLLBACK')
+        throw new ApiError(409, 'EMAIL_EXISTS', 'A user with this email address already exists in the organization.')
+      }
+
+      // Role lookup
+      const roleRes = await client.query<{ id: string }>('SELECT id FROM roles WHERE code = $1', [role])
+      if (!roleRes.rowCount) {
+        await client.query('ROLLBACK')
+        throw new ApiError(500, 'ROLE_NOT_FOUND', `Role definition for ${role} not found.`)
+      }
+      const roleId = roleRes.rows[0].id
+
+      // Delete older unaccepted invitations atomically
+      const deletedOld = await client.query(
+        'DELETE FROM user_invitations WHERE organization_id = $1 AND LOWER(email) = LOWER($2) AND accepted_at IS NULL RETURNING id',
+        [actor.organizationId, normalizedEmail]
+      )
+      const isResend = (deletedOld.rowCount ?? 0) > 0
+      const eventType = isResend ? 'INVITATION_RESENT' : 'USER_INVITED'
+
+      const { rawToken, tokenHash } = generateInvitationToken()
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+
+      await client.query(
         `INSERT INTO user_invitations (
           organization_id, email, display_name, role_id, token_hash, invited_by_user_id, expires_at
         ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
@@ -284,7 +339,7 @@ export function registerUserManagementRoutes(
 
       const inviteUrl = `${config.WEB_ORIGIN.replace(/\/$/, '')}/?invite=${rawToken}`
 
-      // Send transactional invitation email
+      // Send transactional invitation email (fault-tolerant)
       await emailService.sendEmail(
         emailService.buildInvitationEmail({
           to: normalizedEmail,
@@ -295,153 +350,45 @@ export function registerUserManagementRoutes(
           inviteUrl,
           expiresInDays: 7,
         })
-      )
-
-      // Audit event
-      await pool.query(
-        `INSERT INTO audit_events (
-          organization_id, actor_user_id, actor_type, event_type, metadata
-        ) VALUES ($1, $2, 'user', 'USER_INVITED', $3::jsonb)`,
-        [
-          actor.organizationId,
-          actor.id,
-          JSON.stringify({ email: normalizedEmail, role, mode: 'invite_link', phoneWhatsapp: phoneWhatsapp || null }),
-        ]
-      )
-
-      return reply.code(201).send({
-        mode: 'invite_link',
-        inviteUrl,
-        rawToken,
-        expiresAt: expiresAt.toISOString(),
-        message: 'Invitation link generated and dispatched successfully.',
+      ).catch((err) => {
+        console.warn(`[Invitation Email Warning] Could not send email to ${normalizedEmail}: ${err?.message || err}`)
       })
-    }
-
-    // Mode B: Instant Provisioning with Temporary Password
-    const effectivePassword = initialPassword || generateTempPassword()
-    const passwordHash = hashPassword(effectivePassword)
-    const authSubject = `user-${randomUUID()}`
-
-    const client = await pool.connect()
-    try {
-      await client.query('BEGIN')
-
-      const userRes = await client.query<{ id: string; created_at: Date }>(
-        `INSERT INTO users (
-          organization_id, display_name, email, auth_subject, password_hash, phone_whatsapp, is_active, is_demo
-        ) VALUES ($1, $2, $3, $4, $5, $6, true, false)
-        RETURNING id, created_at`,
-        [actor.organizationId, displayName, normalizedEmail, authSubject, passwordHash, phoneWhatsapp || null]
-      )
-
-      const newUser = userRes.rows[0]
-      await client.query('INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)', [newUser.id, roleId])
 
       // Audit event
       await client.query(
         `INSERT INTO audit_events (
           organization_id, actor_user_id, actor_type, event_type, metadata
-        ) VALUES ($1, $2, 'user', 'USER_CREATED', $3::jsonb)`,
+        ) VALUES ($1, $2, 'user', $3, $4::jsonb)`,
         [
           actor.organizationId,
           actor.id,
-          JSON.stringify({ targetUserId: newUser.id, email: normalizedEmail, role, mode: 'instant_password', phoneWhatsapp: phoneWhatsapp || null }),
+          eventType,
+          JSON.stringify({ email: normalizedEmail, role, mode: 'invite_link', phoneWhatsapp: phoneWhatsapp || null, resent: isResend }),
         ]
       )
 
       await client.query('COMMIT')
-
+      recordInvite(actor.organizationId)
       return reply.code(201).send({
-        mode: 'instant_password',
-        user: {
-          id: newUser.id,
-          displayName,
-          email: normalizedEmail,
-          phoneWhatsapp: phoneWhatsapp || null,
-          role,
-          isActive: true,
-          createdAt: newUser.created_at.toISOString(),
-          activeAssignmentsCount: 0,
-        },
-        temporaryPassword: effectivePassword,
-        message: 'Team member created successfully.',
+        mode: 'invite_link',
+        inviteUrl,
+        rawToken,
+        expiresAt: expiresAt.toISOString(),
+        message: isResend ? 'Invitation link refreshed and dispatched successfully.' : 'Invitation link generated and dispatched successfully.',
       })
     } catch (err) {
-      await client.query('ROLLBACK')
+      await client.query('ROLLBACK').catch(() => undefined)
       throw err
     } finally {
       client.release()
     }
   })
 
-  // Backward-compatibility alias for POST /v1/pm/users
-  app.post('/v1/pm/users', async (request: FastifyRequest, reply) => {
-    const parseResult = inviteUserSchema.safeParse({ ...(request.body as object), mode: 'instant_password' })
-    if (!parseResult.success) {
-      const firstError = parseResult.error.errors[0]?.message || 'Invalid input.'
-      throw new ApiError(400, 'INVALID_INPUT', firstError)
-    }
-
-    const actor = await authenticatePm(request, pool, config)
-    if (actor.role !== 'project_manager') {
-      throw new ApiError(403, 'FORBIDDEN', 'Only Project Managers can add team members.')
-    }
-
-    const { displayName, email, role, initialPassword } = parseResult.data
-    const normalizedEmail = email.toLowerCase()
-
-    const existing = await pool.query(
-      'SELECT id FROM users WHERE organization_id = $1 AND LOWER(email) = LOWER($2)',
-      [actor.organizationId, normalizedEmail]
-    )
-
-    if (existing.rowCount && existing.rowCount > 0) {
-      throw new ApiError(409, 'EMAIL_EXISTS', 'A user with this email address already exists in the organization.')
-    }
-
-    const roleRes = await pool.query<{ id: string }>('SELECT id FROM roles WHERE code = $1', [role])
-    if (!roleRes.rowCount) {
-      throw new ApiError(500, 'ROLE_NOT_FOUND', `Role definition for ${role} not found.`)
-    }
-
-    const effectivePassword = initialPassword || generateTempPassword()
-    const passwordHash = hashPassword(effectivePassword)
-    const authSubject = `user-${randomUUID()}`
-
-    const client = await pool.connect()
-    try {
-      await client.query('BEGIN')
-      const userRes = await client.query<{ id: string; created_at: Date }>(
-        `INSERT INTO users (
-          organization_id, display_name, email, auth_subject, password_hash, is_active, is_demo
-        ) VALUES ($1, $2, $3, $4, $5, true, false)
-        RETURNING id, created_at`,
-        [actor.organizationId, displayName, normalizedEmail, authSubject, passwordHash]
-      )
-      const newUser = userRes.rows[0]
-      await client.query('INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)', [newUser.id, roleRes.rows[0].id])
-      await client.query('COMMIT')
-
-      return reply.code(201).send({
-        user: {
-          id: newUser.id,
-          displayName,
-          email: normalizedEmail,
-          role,
-          isActive: true,
-          createdAt: newUser.created_at.toISOString(),
-          activeAssignmentsCount: 0,
-        },
-        temporaryPassword: effectivePassword,
-        message: 'Team member added successfully.',
-      })
-    } catch (err) {
-      await client.query('ROLLBACK')
-      throw err
-    } finally {
-      client.release()
-    }
+  // POST /v1/pm/users — Legacy endpoint deprecated
+  app.post('/v1/pm/users', async (_request, reply) => {
+    return reply.code(410).send({
+      error: { code: 'GONE', message: 'Use POST /v1/pm/users/invite with mode: "invite_link"' },
+    })
   })
 
   // PATCH /v1/pm/users/:id — Role, Status, and Workload Rebalancing
@@ -453,6 +400,9 @@ export function registerUserManagementRoutes(
     }
 
     const targetUserId = String(request.params.id)
+    if (!UUID_REGEX.test(targetUserId)) {
+      throw new ApiError(404, 'USER_NOT_FOUND', 'Team member not found in your organization.')
+    }
 
     const parseResult = updateUserSchema.safeParse(request.body)
     if (!parseResult.success) {
@@ -563,9 +513,12 @@ export function registerUserManagementRoutes(
           targetUserId,
         ])
 
-        // Fetch open assignments
+        // Fetch open assignments (excluding already resolved requests)
         const openAssignments = await client.query<{ id: string; request_id: string }>(
-          'SELECT id, request_id FROM assignments WHERE assignee_user_id = $1 AND ended_at IS NULL',
+          `SELECT a.id, a.request_id
+           FROM assignments a
+           JOIN requests req ON req.id = a.request_id
+           WHERE a.assignee_user_id = $1 AND a.ended_at IS NULL AND req.status != 'resolved' AND req.deleted_at IS NULL`,
           [targetUserId]
         )
 
@@ -621,12 +574,16 @@ export function registerUserManagementRoutes(
               "UPDATE assignments SET ended_at = now(), end_reason = 'unassigned_on_member_deactivation' WHERE assignee_user_id = $1 AND ended_at IS NULL",
               [targetUserId]
             )
+            await client.query(
+              "UPDATE sla_records SET status = 'superseded', updated_at = now() WHERE assignment_id IN (SELECT id FROM assignments WHERE assignee_user_id = $1 AND ended_at IS NOT NULL AND end_reason = 'unassigned_on_member_deactivation') AND status IN ('active', 'acknowledged')",
+              [targetUserId]
+            )
 
-            // Reset request status to awaiting_acknowledgement
+            // Reset request status to awaiting_acknowledgement and bump version
             const requestIds = openAssignments.rows.map((r) => r.request_id)
             await client.query(
               `UPDATE requests
-               SET status = 'awaiting_acknowledgement', updated_at = now()
+               SET status = 'awaiting_acknowledgement', version = version + 1, updated_at = now()
                WHERE id = ANY($1::uuid[]) AND status IN ('acknowledged', 'in_progress', 'awaiting_acknowledgement')`,
               [requestIds]
             )
@@ -738,7 +695,7 @@ export function registerUserManagementRoutes(
        FROM audit_events a
        LEFT JOIN users u ON u.id = a.actor_user_id
        WHERE ${whereClause}
-       ORDER BY a.occurred_at DESC
+       ORDER BY a.occurred_at DESC, a.id DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     )
@@ -772,6 +729,9 @@ export function registerUserManagementRoutes(
       throw new ApiError(403, 'FORBIDDEN', 'Project manager access is required to manage audit records.')
     }
     const { id } = request.params as { id: string }
+    if (!UUID_REGEX.test(id)) {
+      throw new ApiError(404, 'AUDIT_LOG_NOT_FOUND', 'Audit log record not found or already deleted.')
+    }
 
     const result = await pool.query<{ id: string }>(
       `UPDATE audit_events

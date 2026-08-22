@@ -19,17 +19,14 @@ export interface InviteUserInput {
   email: string
   phoneWhatsapp?: string
   role: 'project_manager' | 'internal_team_member'
-  mode: 'invite_link' | 'instant_password'
-  initialPassword?: string
+  mode?: 'invite_link'
 }
 
 export interface InviteUserResponse {
-  mode: 'invite_link' | 'instant_password'
+  mode: 'invite_link'
   inviteUrl?: string
   rawToken?: string
   expiresAt?: string
-  user?: OrganizationUser
-  temporaryPassword?: string
   message: string
 }
 
@@ -113,13 +110,10 @@ export async function inviteOrganizationUser(
     displayName: input.displayName.trim(),
     email: input.email.trim(),
     role: input.role,
-    mode: input.mode,
+    mode: 'invite_link',
   }
   if (input.phoneWhatsapp?.trim()) {
     payload.phoneWhatsapp = input.phoneWhatsapp.trim()
-  }
-  if (input.mode === 'instant_password' && input.initialPassword?.trim()) {
-    payload.initialPassword = input.initialPassword.trim()
   }
 
   const res = await fetch('/v1/pm/users/invite', {
@@ -135,12 +129,6 @@ export async function inviteOrganizationUser(
   }
 
   return data as InviteUserResponse
-}
-
-export async function createOrganizationUser(
-  input: { displayName: string; email: string; role: 'project_manager' | 'internal_team_member'; initialPassword?: string }
-): Promise<InviteUserResponse> {
-  return inviteOrganizationUser({ ...input, mode: 'instant_password' })
 }
 
 export async function updateOrganizationUser(

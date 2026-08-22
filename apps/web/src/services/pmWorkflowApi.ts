@@ -1,5 +1,6 @@
 import { getPmRequest, listTeamMembersWithCapacity, listRequestComments, postRequestComment, removeLocalInMemoryRequest } from './pmRequestApi'
 import { getAuthHeaders } from './devAuth'
+import { generateSafeUUID } from '../utils/uuid'
 
 const headers = (): Record<string, string> => ({
   ...getAuthHeaders(),
@@ -7,7 +8,7 @@ const headers = (): Record<string, string> => ({
 })
 
 async function mutate(path: string, body: { expectedVersion: number; assigneeUserId?: string }, id: string) {
-  const key = crypto.randomUUID()
+  const key = generateSafeUUID()
   try {
     const response = await fetch(path, {
       method: 'POST',

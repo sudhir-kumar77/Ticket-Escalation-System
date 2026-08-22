@@ -29,6 +29,7 @@ export function buildApp(pool: pg.Pool, config = loadConfig()): FastifyInstance 
       done(null, json)
     } catch (err: any) {
       err.statusCode = 400
+      err.code = 'FST_ERR_CTP_INVALID_JSON_BODY'
       done(err, undefined)
     }
   })

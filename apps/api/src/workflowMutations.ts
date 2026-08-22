@@ -123,7 +123,7 @@ export function registerWorkflowMutationRoutes(app: FastifyInstance, pool: pg.Po
         }
         
         await client.query("UPDATE assignments SET ended_at=now(),end_reason='reassigned' WHERE id=$1", [oldAssignmentId])
-        await client.query("UPDATE sla_records SET status='superseded',updated_at=now() WHERE assignment_id=$1 AND status IN ('active','breached')", [oldAssignmentId])
+        await client.query("UPDATE sla_records SET status='superseded',updated_at=now() WHERE assignment_id=$1 AND status = 'active'", [oldAssignmentId])
       }
       
       const assignment = await client.query<any>('INSERT INTO assignments(request_id,assignee_user_id,assigned_by_user_id) VALUES($1,$2,$3) RETURNING id', [row.id, body.assigneeUserId, auth.id])
@@ -133,9 +133,9 @@ export function registerWorkflowMutationRoutes(app: FastifyInstance, pool: pg.Po
       // Handle late reassignment - preserve breach accountability
       if (currentAssignment.rowCount && oldSlaId && oldSlaDeadline && oldAssigneeId) {
         const now = new Date()
-        if (now > oldSlaDeadline && oldSlaStatus === 'active') {
+        if (now > oldSlaDeadline && (oldSlaStatus === 'active' || oldSlaStatus === 'breached')) {
           // Old SLA missed deadline - create breach and escalation for original specialist
-          await client.query("UPDATE sla_records SET breached_at=CURRENT_TIMESTAMP,status='breached',updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='active'", [oldSlaId])
+          await client.query("UPDATE sla_records SET breached_at=CURRENT_TIMESTAMP,status='breached',updated_at=CURRENT_TIMESTAMP WHERE id=$1", [oldSlaId])
           
           // Check idempotency to prevent duplicate escalation events
           const idempotencyKey = `sla:${oldSlaId}:acknowledgement-breach`
@@ -176,10 +176,15 @@ export function registerWorkflowMutationRoutes(app: FastifyInstance, pool: pg.Po
       if (row.version !== body.expectedVersion) throw new ApiError(409, 'REQUEST_VERSION_CONFLICT', 'The request has changed. Refresh and retry.')
       const assignment = await client.query<any>(
         `SELECT a.id,a.assignee_user_id,s.id AS sla_id,s.acknowledged_at,s.deadline_at
-         FROM assignments a JOIN sla_records s ON s.assignment_id=a.id
-         WHERE a.request_id=$1 AND a.ended_at IS NULL FOR UPDATE`, [row.id],
+         FROM assignments a LEFT JOIN sla_records s ON s.assignment_id=a.id
+         WHERE a.request_id=$1 AND a.ended_at IS NULL FOR UPDATE OF a`, [row.id],
       )
-      if (!assignment.rowCount) throw new ApiError(409, 'INVALID_STATE_TRANSITION', 'No current assignee.')
+      if (!assignment.rowCount) {
+        if (auth.role !== 'project_manager') {
+          throw new ApiError(403, 'FORBIDDEN', 'Only the current assignee or a Project Manager can perform this action.')
+        }
+        throw new ApiError(409, 'INVALID_STATE_TRANSITION', 'No current assignee.')
+      }
       const current = assignment.rows[0]
       const isAssignee = current.assignee_user_id === auth.id
       const isPm = auth.role === 'project_manager'
@@ -194,33 +199,37 @@ export function registerWorkflowMutationRoutes(app: FastifyInstance, pool: pg.Po
       let next = row.status
       let isLate = false
       if (action === 'acknowledge') {
-        if (row.status !== 'awaiting_acknowledgement' || current.acknowledged_at) throw new ApiError(409, 'INVALID_STATE_TRANSITION', 'Request is not awaiting acknowledgement.')
+        if (row.status !== 'awaiting_acknowledgement') throw new ApiError(409, 'INVALID_STATE_TRANSITION', 'Request is not awaiting acknowledgement.')
         
         // Determine who is the accountable specialist for SLA purposes
         // PM override: specialist remains accountable, PM is action actor
         const accountableUserId = isOverride ? current.assignee_user_id : auth.id
         
-        const slaUpdate = await client.query<{ is_late: boolean }>(
-          `UPDATE sla_records
-           SET acknowledged_at = now(),
-               acknowledged_by_user_id = $1,
-               is_late = (now() > deadline_at),
-               status = CASE WHEN (now() > deadline_at) THEN 'breached' ELSE 'acknowledged' END,
-               updated_at = now()
-           WHERE id = $2
-           RETURNING (now() > deadline_at) AS is_late`,
-          [accountableUserId, current.sla_id]
-        )
-        isLate = Boolean(slaUpdate.rows[0]?.is_late)
+        if (current.sla_id) {
+          const slaUpdate = await client.query<{ is_late: boolean }>(
+            `UPDATE sla_records
+             SET acknowledged_at = now(),
+                 acknowledged_by_user_id = $1,
+                 is_late = (now() > deadline_at),
+                 status = CASE WHEN (now() > deadline_at) THEN 'breached' ELSE 'acknowledged' END,
+                 updated_at = now()
+             WHERE id = $2
+             RETURNING (now() > deadline_at) AS is_late`,
+            [accountableUserId, current.sla_id]
+          )
+          isLate = Boolean(slaUpdate.rows[0]?.is_late)
+        }
         next = 'acknowledged'
       } else if (action === 'start-work') {
-        if (row.status !== 'acknowledged' || !current.acknowledged_at) throw new ApiError(409, 'INVALID_STATE_TRANSITION', 'Acknowledgement is required before starting work.')
+        if (row.status !== 'acknowledged') throw new ApiError(409, 'INVALID_STATE_TRANSITION', 'Acknowledgement is required before starting work.')
         next = 'in_progress'
       } else {
-        if (row.status !== 'in_progress' || !current.acknowledged_at) throw new ApiError(409, 'INVALID_STATE_TRANSITION', 'Request must be in progress before resolution.')
+        if (row.status !== 'in_progress') throw new ApiError(409, 'INVALID_STATE_TRANSITION', 'Request must be in progress before resolution.')
         next = 'resolved'
         await client.query('UPDATE requests SET resolved_at=now(),resolved_by_user_id=$1 WHERE id=$2', [auth.id, row.id])
-        await client.query("UPDATE sla_records SET status='closed',updated_at=now() WHERE id=$1", [current.sla_id])
+        if (current.sla_id) {
+          await client.query("UPDATE sla_records SET status='closed',updated_at=now() WHERE id=$1", [current.sla_id])
+        }
       }
       await client.query('UPDATE requests SET status=$1,version=version+1,updated_at=now() WHERE id=$2', [next, row.id])
       await client.query(

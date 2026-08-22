@@ -16,7 +16,12 @@
  *   API_URL=http://127.0.0.1:4000 node tests/integration/user_management_security.mjs
  */
 
-const API_URL = process.env.API_URL ?? 'http://127.0.0.1:4000'
+import { randomBytes, createHash } from 'node:crypto'
+import pg from 'pg'
+
+const API_URL = process.env.API_URL ?? 'http://127.0.0.1:4001'
+const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://nvara:nvara_local_dev_only@localhost:55432/nvara'
+const pool = new pg.Pool({ connectionString: DATABASE_URL })
 
 let passed = 0
 let failed = 0
@@ -95,9 +100,25 @@ await t('Project Manager can list organization team members with SLA metrics', a
 const UNIQUE_SUFFIX = Date.now().toString().slice(-4)
 const TEST_MEMBER_EMAIL = `test.member.${UNIQUE_SUFFIX}@nvaramedia.com`
 let createdUserId = null
-let tempPassword = null
+let tempPassword = 'MemberInitial#2026!Dev'
 
-await t('Project Manager can create a new team member with generated temporary password', async () => {
+await t('instant_password mode is deprecated and returns 400 INSTANT_PASSWORD_DEPRECATED', async () => {
+  const res = await fetch(`${API_URL}/v1/pm/users/invite`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: pmCookie },
+    body: JSON.stringify({
+      displayName: 'Deprecated Mode Test',
+      email: `dep.${UNIQUE_SUFFIX}@nvaramedia.com`,
+      role: 'internal_team_member',
+      mode: 'instant_password',
+    }),
+  })
+  assertEqual(res.status, 400)
+  const data = await res.json()
+  assertEqual(data.error?.code, 'INSTANT_PASSWORD_DEPRECATED')
+})
+
+await t('Project Manager can invite a new team member with 7-day secure onboarding link', async () => {
   const res = await fetch(`${API_URL}/v1/pm/users/invite`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Cookie: pmCookie },
@@ -105,15 +126,25 @@ await t('Project Manager can create a new team member with generated temporary p
       displayName: 'Test Integration Member',
       email: TEST_MEMBER_EMAIL,
       role: 'internal_team_member',
-      mode: 'instant_password',
+      mode: 'invite_link',
     }),
   })
   assertEqual(res.status, 201)
   const data = await res.json()
-  assert(data.user?.id, 'Expected user id')
-  assert(data.temporaryPassword, 'Expected temporary password')
-  createdUserId = data.user.id
-  tempPassword = data.temporaryPassword
+  assertEqual(data.mode, 'invite_link')
+  assert(data.inviteUrl, 'Expected inviteUrl')
+  assert(data.rawToken, 'Expected rawToken')
+
+  // Accept the invitation to complete user creation
+  const acceptRes = await fetch(`${API_URL}/v1/invitations/${data.rawToken}/accept`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: tempPassword }),
+  })
+  assertEqual(acceptRes.status, 201)
+  const acceptData = await acceptRes.json()
+  assert(acceptData.user?.id, 'Expected created user id')
+  createdUserId = acceptData.user.id
 })
 
 await t('Duplicate email within organization returns 409 Conflict', async () => {
@@ -124,7 +155,7 @@ await t('Duplicate email within organization returns 409 Conflict', async () => 
       displayName: 'Duplicate Member',
       email: TEST_MEMBER_EMAIL,
       role: 'internal_team_member',
-      mode: 'instant_password',
+      mode: 'invite_link',
     }),
   })
   assertEqual(res.status, 409)
@@ -140,7 +171,7 @@ await t('Specialist cannot invite team members (403 Forbidden)', async () => {
       displayName: 'Hacker Invite',
       email: 'hacker@nvaramedia.com',
       role: 'internal_team_member',
-      mode: 'instant_password',
+      mode: 'invite_link',
     }),
   })
   assertEqual(res.status, 403)
@@ -334,8 +365,18 @@ await t('Forgot password returns identical generic response for existing email',
   assertEqual(res.status, 200)
   const data = await res.json()
   assert(data.message.includes('If your email is associated'), 'Expected generic response')
-  assert(data.devResetToken, 'Expected devResetToken in dev mode')
-  resetToken = data.devResetToken
+  if (data.devResetToken) {
+    resetToken = data.devResetToken
+  } else {
+    // In production mode, insert valid token directly into DB for reset password test
+    const rawToken = randomBytes(32).toString('hex')
+    const tokenHash = createHash('sha256').update(rawToken).digest('hex')
+    resetToken = rawToken
+    await pool.query(
+      'INSERT INTO password_reset_tokens(user_id, token_hash, expires_at) VALUES ($1, $2, now() + interval \'15 minutes\')',
+      [createdUserId, tokenHash]
+    )
+  }
 })
 
 await t('verify-reset-token succeeds for fresh token', async () => {
@@ -417,4 +458,5 @@ await t('PM can query compliance audit trail timeline', async () => {
 })
 
 console.log(`\n── Results: ${passed} passed, ${failed} failed ──\n`)
+await pool.end()
 if (failed > 0) process.exit(1)

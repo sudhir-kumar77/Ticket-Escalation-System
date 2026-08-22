@@ -412,62 +412,70 @@ export function registerUserManagementRoutes(
 
     const { displayName, role, isActive, reassignToUserId, phoneWhatsapp } = parseResult.data
 
-    // Lookup target user
-    const targetRes = await pool.query<{
-      id: string
-      display_name: string
-      email: string
-      role: 'project_manager' | 'internal_team_member'
-      is_active: boolean
-      created_at: Date
-    }>(
-      `SELECT u.id, u.display_name, u.email, r.code AS role, u.is_active, u.created_at
-       FROM users u
-       JOIN user_roles ur ON ur.user_id = u.id
-       JOIN roles r ON r.id = ur.role_id
-       WHERE u.id = $1 AND u.organization_id = $2`,
-      [targetUserId, actor.organizationId]
-    )
-
-    if (!targetRes.rowCount) {
-      throw new ApiError(404, 'USER_NOT_FOUND', 'Team member not found in your organization.')
-    }
-
-    const currentTarget = targetRes.rows[0]
-
-    // ─── 1. Self-lockout guards ──────────────────────────────────────────────
-    if (actor.id === targetUserId) {
-      if (isActive === false) {
-        throw new ApiError(400, 'CANNOT_DEACTIVATE_SELF', 'You cannot deactivate your own administrative account.')
-      }
-      if (role && role !== 'project_manager') {
-        throw new ApiError(400, 'CANNOT_DEMOTE_SELF', 'You cannot remove your own Project Manager administrative role.')
-      }
-    }
-
-    // ─── 2. Last Active PM Invariant (Organization Survival Guard) ───────────
-    if (currentTarget.role === 'project_manager' && (isActive === false || (role && role !== 'project_manager'))) {
-      const pmCountRes = await pool.query<{ count: string }>(
-        `SELECT COUNT(u.id)::int AS count
-         FROM users u
-         JOIN user_roles ur ON ur.user_id = u.id
-         JOIN roles r ON r.id = ur.role_id
-         WHERE u.organization_id = $1 AND r.code = 'project_manager' AND u.is_active = true`,
-        [actor.organizationId]
-      )
-      const activePmCount = parseInt(pmCountRes.rows[0]?.count || '0', 10)
-      if (activePmCount <= 1) {
-        throw new ApiError(
-          400,
-          'CANNOT_REMOVE_LAST_ADMIN',
-          'Cannot deactivate or demote the last remaining active Project Manager in the organization.'
-        )
-      }
-    }
-
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
+
+      // Serialize administrative mutations per organization to prevent last-admin race conditions
+      await client.query('SELECT id FROM organizations WHERE id = $1 FOR UPDATE', [actor.organizationId])
+
+      // Lookup target user under transaction
+      const targetRes = await client.query<{
+        id: string
+        display_name: string
+        email: string
+        role: 'project_manager' | 'internal_team_member'
+        is_active: boolean
+        created_at: Date
+      }>(
+        `SELECT u.id, u.display_name, u.email, r.code AS role, u.is_active, u.created_at
+         FROM users u
+         JOIN user_roles ur ON ur.user_id = u.id
+         JOIN roles r ON r.id = ur.role_id
+         WHERE u.id = $1 AND u.organization_id = $2
+         FOR UPDATE`,
+        [targetUserId, actor.organizationId]
+      )
+
+      if (!targetRes.rowCount) {
+        await client.query('ROLLBACK')
+        throw new ApiError(404, 'USER_NOT_FOUND', 'Team member not found in your organization.')
+      }
+
+      const currentTarget = targetRes.rows[0]
+
+      // ─── 1. Self-lockout guards ──────────────────────────────────────────────
+      if (actor.id === targetUserId) {
+        if (isActive === false) {
+          await client.query('ROLLBACK')
+          throw new ApiError(400, 'CANNOT_DEACTIVATE_SELF', 'You cannot deactivate your own administrative account.')
+        }
+        if (role && role !== 'project_manager') {
+          await client.query('ROLLBACK')
+          throw new ApiError(400, 'CANNOT_DEMOTE_SELF', 'You cannot remove your own Project Manager administrative role.')
+        }
+      }
+
+      // ─── 2. Last Active PM Invariant (Organization Survival Guard) ───────────
+      if (currentTarget.role === 'project_manager' && (isActive === false || (role && role !== 'project_manager'))) {
+        const pmCountRes = await client.query<{ count: string }>(
+          `SELECT COUNT(u.id)::int AS count
+           FROM users u
+           JOIN user_roles ur ON ur.user_id = u.id
+           JOIN roles r ON r.id = ur.role_id
+           WHERE u.organization_id = $1 AND r.code = 'project_manager' AND u.is_active = true`,
+          [actor.organizationId]
+        )
+        const activePmCount = parseInt(pmCountRes.rows[0]?.count || '0', 10)
+        if (activePmCount <= 1) {
+          await client.query('ROLLBACK')
+          throw new ApiError(
+            400,
+            'CANNOT_REMOVE_LAST_ADMIN',
+            'Cannot deactivate or demote the last remaining active Project Manager in the organization.'
+          )
+        }
+      }
 
       // Update basic fields
       if (displayName !== undefined || isActive !== undefined || phoneWhatsapp !== undefined) {

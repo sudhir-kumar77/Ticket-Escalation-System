@@ -1,6 +1,6 @@
 <div align="center">
 
-# ⚡ NVARA MEDIA — TICKET ESCALATION & LIFECYCLE MANAGEMENT SYSTEM
+# NVARA MEDIA — TICKET ESCALATION & LIFECYCLE MANAGEMENT SYSTEM
 ### *Enterprise-Grade, High-Throughput Request Orchestration & Autonomous SLA Escalation Engine*
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
@@ -14,42 +14,42 @@
 [![License](https://img.shields.io/badge/License-MIT-purple?style=for-the-badge)]()
 
 <p align="center">
-  <a href="#-system-overview">Overview</a> •
-  <a href="#-key-features">Key Features</a> •
-  <a href="#-system-architecture">Architecture</a> •
-  <a href="#-security--compliance-invariants">Security & Compliance</a> •
-  <a href="#-performance--scalability">Performance</a> •
-  <a href="#-quick-start-local-development">Quick Start</a> •
-  <a href="#-production-deployment">Production Deployment</a> •
-  <a href="#-api-specification">API Reference</a> •
-  <a href="#-verification--test-suite">Test Matrix</a>
+  <a href="#system-overview">Overview</a> •
+  <a href="#key-features">Key Features</a> •
+  <a href="#system-architecture">Architecture</a> •
+  <a href="#security--compliance-invariants">Security & Compliance</a> •
+  <a href="#performance--scalability">Performance</a> •
+  <a href="#quick-start-local-development">Quick Start</a> •
+  <a href="#production-deployment">Production Deployment</a> •
+  <a href="#api-specification">API Reference</a> •
+  <a href="#verification--test-suite">Test Matrix</a>
 </p>
 
 ---
 
 </div>
 
-## 📌 System Overview
+## System Overview
 
 **Nvara Media Ticket Escalation System** is a production-hardened, multi-tenant digital operations and support management engine. Built with FAANG-grade reliability and security principles, it seamlessly coordinates request intake, automated triage, specialist dispatch, SLA countdown monitoring, administrative overrides, and permanent audit compliance—**with zero external SaaS or proprietary cloud dependencies (100% free-tier and self-contained operational cost)**.
 
 ```mermaid
 graph TD
-    Client["🌐 Public Client Portal"] -->|Idempotent Intake / Tracker| Nginx["🛡️ NGINX Ingress Gateway (Port 80)"]
-    Staff["👤 PM / Operations Staff"] -->|RBAC Session Auth| Nginx
+    Client["Public Client Portal"] -->|Idempotent Intake / Tracker| Nginx["NGINX Ingress Gateway (Port 80)"]
+    Staff["PM / Operations Staff"] -->|RBAC Session Auth| Nginx
     
-    Nginx -->|Reverse Proxy /v1/*| Fastify["⚡ Fastify API Cluster (Node.js 22)"]
-    Nginx -->|Static Assets| ReactSPA["💻 React 18 SPA (Tailwind CSS)"]
+    Nginx -->|Reverse Proxy /v1/*| Fastify["Fastify API Cluster (Node.js 22)"]
+    Nginx -->|Static Assets| ReactSPA["React 18 SPA (Tailwind CSS)"]
     
-    Fastify -->|Atomic SQL Transactions & Row Locks| Postgres[("🐘 PostgreSQL 16 Database\n(PL/pgSQL Immutability Triggers)")]
+    Fastify -->|Atomic SQL Transactions & Row Locks| Postgres[("PostgreSQL 16 Database\n(PL/pgSQL Immutability Triggers)")]
     
-    Worker["⚙️ Autonomous SLA Worker Daemon"] -->|FOR UPDATE SKIP LOCKED Poll| Postgres
-    Worker -->|Transactional Retries & Backoff| MailServer["📨 SMTP Email Dispatch"]
+    Worker["Autonomous SLA Worker Daemon"] -->|FOR UPDATE SKIP LOCKED Poll| Postgres
+    Worker -->|Transactional Retries & Backoff| MailServer["SMTP Email Dispatch"]
 ```
 
 ---
 
-## 🚀 Key Features
+## Key Features
 
 ### 1. Dual-Portal Client & Staff Experience
 * **Public Client Portal**: Responsive, zero-friction request intake with client-side UUID generation, Zod schema validation, and sliding-window rate limiting.
@@ -73,7 +73,7 @@ graph TD
 
 ---
 
-## 🏛️ System Architecture
+## System Architecture
 
 ### Request State Machine & Concurrency Model
 
@@ -133,7 +133,7 @@ Ticket Escalation System/
 
 ---
 
-## 🔒 Security & Compliance Invariants
+## Security & Compliance Invariants
 
 | Security Domain | Implementation Standard | Verification Proof |
 |:---|:---|:---|
@@ -148,7 +148,7 @@ Ticket Escalation System/
 
 ---
 
-## ⚡ Performance & Scalability
+## Performance & Scalability
 
 Empirically verified through automated load and concurrency benchmark suites:
 
@@ -161,7 +161,7 @@ Empirically verified through automated load and concurrency benchmark suites:
 
 ---
 
-## 💻 Quick Start (Local Development)
+## Quick Start (Local Development)
 
 ### 1. Prerequisites
 * [Node.js](https://nodejs.org/) (v20.x or v22.x LTS)
@@ -207,7 +207,7 @@ Navigate to **`http://localhost:5173`** in your browser.
 
 ---
 
-## 🚢 Production Deployment
+## Production Deployment
 
 Deploy the entire production-grade stack (PostgreSQL + Migrations + API + Worker + NGINX Web) with a single command:
 
@@ -231,7 +231,7 @@ curl -I http://localhost:8080/v1/health/ready
 
 ---
 
-## 📖 API Specification
+## API Specification
 
 The API provides **35 production routes** adhering to strict RESTful JSON schemas:
 
@@ -280,7 +280,7 @@ The API provides **35 production routes** adhering to strict RESTful JSON schema
 
 ---
 
-## 🧪 Verification & Test Suite
+## Verification & Test Suite
 
 The system includes **22 dedicated integration and forensic test suites** covering **221 assertions** mapped to **92 distinct behavioral specifications**:
 
@@ -322,7 +322,7 @@ npm run test:integration
 
 ---
 
-## 🛠️ Disaster Recovery & Operator Runbook
+## Disaster Recovery & Operator Runbook
 
 ### Physical Database Backup
 ```bash
@@ -344,6 +344,6 @@ docker exec -i ticketescalationsystem-postgres-1 pg_restore -U nvara -d nvara_re
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the **MIT License** — feel free to use, modify, and distribute for commercial or private projects.

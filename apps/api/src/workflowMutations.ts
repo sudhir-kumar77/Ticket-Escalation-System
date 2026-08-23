@@ -5,6 +5,8 @@ import { z } from 'zod'
 import type { AppConfig } from '@nvara/config'
 import { authenticatePm, type PmAuth } from './auth.js'
 import { ApiError } from './errors.js'
+import { queueNotification, triggerDispatcher } from './notifications.js'
+import { emailService } from './emailService.js'
 
 const mutationSchema = z.object({
   expectedVersion: z.number().int().positive(),
@@ -153,9 +155,36 @@ export function registerWorkflowMutationRoutes(app: FastifyInstance, pool: pg.Po
       }
       
       await client.query('INSERT INTO audit_events(organization_id,request_id,assignment_id,actor_user_id,actor_type,event_type,previous_state,new_state,metadata,correlation_id) VALUES($1,$2,$3,$4,\'user\',$5,$6,\'awaiting_acknowledgement\',$7,$8)', [auth.organizationId, row.id, assignment.rows[0].id, auth.id, eventType, row.status, JSON.stringify({ assigneeUserId: body.assigneeUserId }), request.id])
+      
+      // Atomic Transactional Outbox Notification
+      if (eventType === 'assigned') {
+        await queueNotification(client, {
+          organizationId: auth.organizationId,
+          recipientUserId: body.assigneeUserId,
+          type: 'REQUEST_ASSIGNED',
+          title: 'New Request Assigned',
+          body: `You have been assigned to request ${row.public_reference}`,
+          requestId: row.id,
+          assignmentId: assignment.rows[0].id,
+          businessEventId: `assign:${assignment.rows[0].id}`,
+        })
+      } else {
+        await queueNotification(client, {
+          organizationId: auth.organizationId,
+          recipientUserId: body.assigneeUserId,
+          type: 'REQUEST_REASSIGNED',
+          title: 'Request Reassigned',
+          body: `You have been reassigned to request ${row.public_reference}`,
+          requestId: row.id,
+          assignmentId: assignment.rows[0].id,
+          businessEventId: `reassign:${assignment.rows[0].id}`,
+        })
+      }
+
       const response = await detail(client, auth.organizationId, String((request.params as any).id))
       await saveIdem(client, auth, 'POST', route, key, 200, response)
       await client.query('COMMIT')
+      triggerDispatcher(pool, config)
       return reply.send(response)
     } catch (error) { await client.query('ROLLBACK').catch(() => undefined); throw error } finally { client.release() }
   })
@@ -251,9 +280,82 @@ export function registerWorkflowMutationRoutes(app: FastifyInstance, pool: pg.Po
           request.id,
         ],
       )
+
+      // Query PM recipients for workflow state transitions
+      const pmRecipients = await client.query<{ id: string }>(
+        `SELECT u.id FROM users u
+         JOIN user_roles ur ON ur.user_id = u.id
+         JOIN roles r ON r.id = ur.role_id
+         WHERE u.organization_id = $1 AND r.code = 'project_manager' AND u.is_active = true`,
+        [auth.organizationId]
+      )
+
+      if (action === 'acknowledge') {
+        for (const pm of pmRecipients.rows) {
+          await queueNotification(client, {
+            organizationId: auth.organizationId,
+            recipientUserId: pm.id,
+            type: 'REQUEST_ACKNOWLEDGED',
+            title: 'Request Acknowledged',
+            body: `${auth.displayName} acknowledged request ${String((request.params as any).id)}`,
+            requestId: row.id,
+            assignmentId: current.id,
+            businessEventId: `ack:${row.id}:${row.version}`,
+          })
+        }
+      } else if (action === 'start-work') {
+        for (const pm of pmRecipients.rows) {
+          await queueNotification(client, {
+            organizationId: auth.organizationId,
+            recipientUserId: pm.id,
+            type: 'REQUEST_STARTED',
+            title: 'Work Started',
+            body: `${auth.displayName} started work on request ${String((request.params as any).id)}`,
+            requestId: row.id,
+            assignmentId: current.id,
+            businessEventId: `start:${row.id}:${row.version}`,
+          })
+        }
+      } else if (action === 'resolve') {
+        for (const pm of pmRecipients.rows) {
+          await queueNotification(client, {
+            organizationId: auth.organizationId,
+            recipientUserId: pm.id,
+            type: 'REQUEST_RESOLVED',
+            title: 'Request Resolved',
+            body: `${auth.displayName} resolved request ${String((request.params as any).id)}`,
+            requestId: row.id,
+            assignmentId: current.id,
+            businessEventId: `resolve:${row.id}:${row.version}`,
+          })
+        }
+
+        // Outside-web client resolution notification email
+        const clientRes = await client.query<{ name: string; email: string }>(
+          `SELECT c.name, c.email FROM clients c JOIN requests r ON r.client_id = c.id WHERE r.id = $1`,
+          [row.id]
+        )
+        const clientEmail = clientRes.rows[0]?.email
+        if (clientEmail) {
+          const webOrigin = config.WEB_ORIGIN || 'http://localhost:3000'
+          const ref = String((request.params as any).id)
+          const trackerUrl = `${webOrigin}/?track=${encodeURIComponent(ref)}`
+          await emailService.sendEmail(
+            emailService.buildRequestResolvedEmail({
+              to: clientEmail,
+              clientName: clientRes.rows[0]?.name || 'Client',
+              reference: ref,
+              requirement: (row as any).requirement || 'Project Deliverables',
+              trackerUrl,
+            })
+          )
+        }
+      }
+
       const response = await detail(client, auth.organizationId, String((request.params as any).id))
       await saveIdem(client, auth, 'POST', route, key, 200, response)
       await client.query('COMMIT')
+      triggerDispatcher(pool, config)
       return reply.send(response)
     } catch (error) { await client.query('ROLLBACK').catch(() => undefined); throw error } finally { client.release() }
   }

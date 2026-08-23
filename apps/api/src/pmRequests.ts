@@ -5,6 +5,7 @@ import { z } from 'zod'
 import type { AppConfig } from '@nvara/config'
 import { authenticatePm, type PmAuth } from './auth.js'
 import { ApiError } from './errors.js'
+import { queueNotification, triggerDispatcher } from './notifications.js'
 
 const reference = (request: FastifyRequest) => String((request.params as any).id ?? '')
 
@@ -437,7 +438,51 @@ export function registerPmRequestRoutes(app: FastifyInstance, pool: pg.Pool, con
         )
       }
 
+      // Outbox Notifications for comments
+      const commentPreview = body.trim().length > 100 ? `${body.trim().slice(0, 97)}...` : body.trim()
+      if (user.role === 'project_manager') {
+        const assigneeRes = await client.query<{ assignee_user_id: string }>(
+          'SELECT assignee_user_id FROM assignments WHERE request_id = $1 AND ended_at IS NULL',
+          [requestId]
+        )
+        if (assigneeRes.rowCount && assigneeRes.rows[0].assignee_user_id !== user.id) {
+          await queueNotification(client, {
+            organizationId: user.organizationId,
+            recipientUserId: assigneeRes.rows[0].assignee_user_id,
+            type: 'COMMENT_ADDED',
+            title: `New Comment on ${reference(request)}`,
+            body: `${user.displayName}: ${commentPreview}`,
+            requestId,
+            metadata: { commentId: comment.id },
+            businessEventId: `comment:${comment.id}`,
+          })
+        }
+      } else {
+        const pmRes = await client.query<{ id: string }>(
+          `SELECT u.id FROM users u
+           JOIN user_roles ur ON ur.user_id = u.id
+           JOIN roles r ON r.id = ur.role_id
+           WHERE u.organization_id = $1 AND r.code = 'project_manager' AND u.is_active = true`,
+          [user.organizationId]
+        )
+        for (const pm of pmRes.rows) {
+          if (pm.id !== user.id) {
+            await queueNotification(client, {
+              organizationId: user.organizationId,
+              recipientUserId: pm.id,
+              type: 'COMMENT_ADDED',
+              title: `New Comment on ${reference(request)}`,
+              body: `${user.displayName}: ${commentPreview}`,
+              requestId,
+              metadata: { commentId: comment.id },
+              businessEventId: `comment:${comment.id}`,
+            })
+          }
+        }
+      }
+
       await client.query('COMMIT')
+      triggerDispatcher(pool, config)
       return reply.code(201).send(responseData)
     } catch (err) {
       await client.query('ROLLBACK').catch(() => undefined)

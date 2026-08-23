@@ -10,6 +10,7 @@ import { registerPmRequestRoutes } from './pmRequests.js'
 import { registerPublicTrackerRoutes } from './publicTracker.js'
 import { registerUserManagementRoutes } from './userManagement.js'
 import { registerWorkflowMutationRoutes } from './workflowMutations.js'
+import { registerNotificationRoutes, sseStreamManager } from './notifications.js'
 
 export function buildApp(pool: pg.Pool, config = loadConfig()): FastifyInstance {
   const app = Fastify({
@@ -112,6 +113,7 @@ export function buildApp(pool: pg.Pool, config = loadConfig()): FastifyInstance 
   registerPmRequestRoutes(app, pool, config)
   registerUserManagementRoutes(app, pool, config)
   registerWorkflowMutationRoutes(app, pool, config)
+  registerNotificationRoutes(app, pool, config)
 
   app.setNotFoundHandler((_request, reply) =>
     reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Route not found' } })
@@ -126,6 +128,7 @@ const pool = createDbPool(config.DATABASE_URL)
 const app = buildApp(pool, config)
 const shutdown = async (signal: string) => {
   logger.info(`Received ${signal}, gracefully shutting down API server...`)
+  sseStreamManager.closeAll()
   await app.close()
   await pool.end()
   process.exit(0)

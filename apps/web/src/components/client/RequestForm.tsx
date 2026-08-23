@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from 'react'
 import {
   SERVICE_DOMAIN_DESCRIPTIONS,
+  SERVICE_DOMAIN_GROUPS,
   SERVICE_DOMAIN_LABELS,
   type ClientUrgency,
   type CreateRequestInput,
@@ -46,7 +47,7 @@ export function RequestForm({
     company: '',
     email: '',
     phone: '',
-    serviceDomain: 'digital_marketing',
+    serviceDomain: 'performance_marketing',
     subject: '',
     description: '',
     clientUrgency: 'flexible',
@@ -111,20 +112,43 @@ export function RequestForm({
       {/* ── Topbar ── */}
       <header className="h-14 border-b border-[#e2e8e5] bg-white px-6 sm:px-10 flex items-center justify-between sticky top-0 z-10 shadow-2xs">
         <div className="flex items-center gap-3">
-          <div className="w-7 h-7 rounded bg-[#0b131b] text-white flex items-center justify-center font-bold text-xs">
+          <div className="w-7 h-7 rounded bg-[#0b131b] text-[#c4fb6d] border border-[#d4e157]/30 flex items-center justify-center font-bold text-xs">
             N
           </div>
           <span className="font-bold text-[14px] tracking-tight text-[#0b131b]">Nvara Media</span>
           <span className="text-[12px] font-medium text-[#64748b] hidden sm:inline-block">/ Request Submission</span>
         </div>
-        <button
-          type="button"
-          onClick={onBack}
-          className="inline-flex items-center gap-1 text-[13px] font-medium text-[#64748b] hover:text-[#0f172a] px-2.5 py-1 rounded border border-[#e2e8f0] hover:bg-[#f8fafc] transition-colors cursor-pointer"
-        >
-          <span>←</span>
-          <span>Portal Home</span>
-        </button>
+        <div className="flex items-center gap-2.5">
+          <a
+            href="https://nvaramedia.com"
+            target="_blank"
+            rel="noreferrer noopener"
+            className="hidden sm:inline-flex items-center gap-1.5 text-[12px] font-medium text-slate-500 hover:text-slate-900 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+          >
+            <span>← nvaramedia.com</span>
+          </a>
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-semibold text-[#0f172a] bg-white hover:bg-slate-50 border border-slate-300 hover:border-slate-900 shadow-2xs hover:shadow-xs transition-all cursor-pointer select-none group"
+            title="Return to Portal Home"
+          >
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="text-slate-500 group-hover:text-slate-900 group-hover:-translate-x-0.5 transition-transform"
+            >
+              <path d="m15 18-6-6 6-6" />
+            </svg>
+            <span>Portal Home</span>
+          </button>
+        </div>
       </header>
 
       {/* ── Main Canvas (Purposeful 2-Column Desktop Grid) ── */}
@@ -219,10 +243,14 @@ export function RequestForm({
                     onChange={(e) => set('serviceDomain', e.target.value as ServiceDomain)}
                     className="w-full h-10 px-3 rounded-md border border-[#cbd5e1] bg-white text-[13.5px] font-medium text-[#0f172a] focus:border-[#0f172a] focus:ring-1 focus:ring-[#0f172a] outline-none transition-colors"
                   >
-                    {SERVICE_DOMAINS.map((domain) => (
-                      <option key={domain} value={domain}>
-                        {SERVICE_DOMAIN_LABELS[domain]}
-                      </option>
+                    {SERVICE_DOMAIN_GROUPS.map((group) => (
+                      <optgroup key={group.category} label={`── ${group.category} ──`}>
+                        {group.options.map((opt) => (
+                          <option key={opt.slug} value={opt.slug}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </optgroup>
                     ))}
                   </select>
                   <p className="text-[12px] text-[#64748b] mt-1.5">

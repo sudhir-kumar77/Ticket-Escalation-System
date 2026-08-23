@@ -65,6 +65,8 @@ export function ActionPanel({
   const targetMemberName = cleanName(targetMember?.name ?? 'Specialist')
   const hasChangedAssignee = selectedUserId !== currentAssigneeId && Boolean(selectedUserId)
 
+  const currentAssigneeName = cleanName(request.assignment?.assignee?.name || 'Specialist')
+
   return (
     <div className="flex flex-col gap-6">
       {/* ── Contextual Lifecycle Action Box ── */}
@@ -77,21 +79,24 @@ export function ActionPanel({
             <span className="w-2 h-2 rounded-full bg-[#d97706] animate-pulse" />
           </div>
 
-          <p className="text-[13px] text-[#92400e] leading-relaxed">
-            {isAssignee
-              ? 'You are the assigned specialist. Confirm receipt to meet the 24-hour SLA window.'
-              : `Awaiting receipt confirmation from ${cleanName(request.assignment?.assignee?.name || 'assigned specialist')}.`}
-          </p>
-
-          {(isAssignee || isPM) && (
-            <PrimaryBtn
-              onClick={onAcknowledge}
-              disabled={busy}
-              busy={busy}
-              className="w-full h-10 rounded-lg bg-[#059669] hover:bg-[#047857] active:bg-[#064e3b] text-white font-bold shadow-xs"
-            >
-              {isAssignee ? 'Acknowledge Request' : 'Acknowledge on Behalf of Specialist'}
-            </PrimaryBtn>
+          {isAssignee ? (
+            <>
+              <p className="text-[13px] text-[#92400e] leading-relaxed">
+                You are the assigned specialist. Confirm receipt to satisfy the 24-hour SLA window.
+              </p>
+              <PrimaryBtn
+                onClick={onAcknowledge}
+                disabled={busy}
+                busy={busy}
+                className="w-full h-10 rounded-lg bg-[#059669] hover:bg-[#047857] active:bg-[#064e3b] text-white font-bold shadow-xs"
+              >
+                Acknowledge Request
+              </PrimaryBtn>
+            </>
+          ) : (
+            <p className="text-[13px] text-[#92400e] leading-relaxed">
+              Awaiting receipt confirmation from <strong className="font-semibold">{currentAssigneeName}</strong> within the 24-hour SLA window.
+            </p>
           )}
         </div>
       )}
@@ -100,24 +105,34 @@ export function ActionPanel({
         <div className="rounded-xl bg-[#f0fdf4] border border-[#dcfce7] p-5 flex flex-col gap-3.5 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold uppercase tracking-wider text-[#166534]">
-              Ready For Execution
+              {isAssignee ? 'Ready For Execution' : 'Specialist Assigned'}
             </span>
             <span className="w-2 h-2 rounded-full bg-[#16a34a]" />
           </div>
 
-          <p className="text-[13px] text-[#166534] leading-relaxed">
-            Receipt acknowledged. Begin active project execution.
-          </p>
-
-          {(isAssignee || isPM) && (
-            <PrimaryBtn
-              onClick={onStartWork}
-              disabled={busy}
-              busy={busy}
-              className="w-full h-10 rounded-lg bg-[#0f172a] hover:bg-[#1e293b] text-white font-bold shadow-xs"
-            >
-              Start Active Work
-            </PrimaryBtn>
+          {isAssignee ? (
+            <>
+              <p className="text-[13px] text-[#166534] leading-relaxed">
+                Receipt acknowledged. Click below to begin active project execution and update the milestone tracker.
+              </p>
+              <PrimaryBtn
+                onClick={onStartWork}
+                disabled={busy}
+                busy={busy}
+                className="w-full h-10 rounded-lg bg-[#059669] hover:bg-[#047857] text-white font-bold shadow-xs"
+              >
+                Start Active Work
+              </PrimaryBtn>
+            </>
+          ) : (
+            <div className="flex flex-col gap-1 text-[#166534]">
+              <p className="text-[13px] font-medium leading-relaxed">
+                Receipt acknowledged on time by <strong className="font-semibold">{currentAssigneeName}</strong>.
+              </p>
+              <p className="text-[12px] text-[#15803d]">
+                Waiting for assigned specialist to initiate active execution.
+              </p>
+            </div>
           )}
         </div>
       )}
@@ -131,19 +146,24 @@ export function ActionPanel({
             <span className="w-2 h-2 rounded-full bg-[#4f46e5] animate-pulse" />
           </div>
 
-          <p className="text-[13px] text-[#475569] leading-relaxed">
-            Specialist is actively completing deliverables.
-          </p>
-
-          {(isAssignee || isPM) && (
-            <PrimaryBtn
-              onClick={onResolve}
-              disabled={busy}
-              busy={busy}
-              className="w-full h-10 rounded-lg bg-[#059669] hover:bg-[#047857] text-white font-bold shadow-xs"
-            >
-              Mark as Resolved
-            </PrimaryBtn>
+          {isAssignee ? (
+            <>
+              <p className="text-[13px] text-[#475569] leading-relaxed">
+                You are actively executing deliverables. Click below once deliverables are completed to mark resolved.
+              </p>
+              <PrimaryBtn
+                onClick={onResolve}
+                disabled={busy}
+                busy={busy}
+                className="w-full h-10 rounded-lg bg-[#059669] hover:bg-[#047857] text-white font-bold shadow-xs"
+              >
+                Mark as Resolved
+              </PrimaryBtn>
+            </>
+          ) : (
+            <p className="text-[13px] text-[#475569] leading-relaxed">
+              <strong className="font-semibold text-[#0f172a]">{currentAssigneeName}</strong> is actively completing project deliverables.
+            </p>
           )}
         </div>
       )}

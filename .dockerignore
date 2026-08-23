@@ -1,9 +1,46 @@
-node_modules
-**/node_modules
-dist
-**/dist
+# Version Control
 .git
+.gitignore
+
+# Node & Package Managers
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Test Suites, Reports & Fixtures
+tests/
+playwright-report/
+test-results/
+coverage/
+*.spec.ts
+*.spec.js
+*.test.ts
+*.test.js
+
+# Local Databases & Persistent Dumps
+.pgdata
+*.sql.gz
+*.dump
+
+# Local Environment Variables & Secrets
 .env
-test-results
-playwright-report
-coverage
+.env.*
+!.env.example
+
+# IDE & Editor Directories
+.vscode
+.idea
+*.swp
+*.swo
+
+# Temporary Files, Logs & Scratch Artifacts
+*.log
+scratch/
+tmp/
+*.tmp
+*.bak
+
+# Documentation (Excluded from Production Images)
+docs/

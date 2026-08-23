@@ -15,6 +15,7 @@ import {
 } from './crypto.js'
 import { emailService } from './emailService.js'
 import { logger } from './logger.js'
+import { queueNotification, triggerDispatcher } from './notifications.js'
 
 export type PmAuth = {
   id: string
@@ -384,25 +385,46 @@ export function registerAuthRoutes(app: FastifyInstance, pool: pg.Pool, config: 
       throw new ApiError(400, 'CANNOT_REVOKE', 'Current session is not tracked.')
     }
 
-    const result = await pool.query(
-      `UPDATE sessions
-       SET revoked_at = now()
-       WHERE user_id = $1 AND id != $2 AND revoked_at IS NULL`,
-      [user.id, user.sessionId]
-    )
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      const result = await client.query(
+        `UPDATE sessions
+         SET revoked_at = now()
+         WHERE user_id = $1 AND id != $2 AND revoked_at IS NULL`,
+        [user.id, user.sessionId]
+      )
 
-    // Audit log
-    await pool.query(
-      `INSERT INTO audit_events (
-        organization_id, actor_user_id, actor_type, event_type, metadata
-      ) VALUES ($1, $2, 'user', 'REMOTE_SESSIONS_REVOKED', $3::jsonb)`,
-      [user.organizationId, user.id, JSON.stringify({ revokedCount: result.rowCount })]
-    )
+      // Audit log
+      await client.query(
+        `INSERT INTO audit_events (
+          organization_id, actor_user_id, actor_type, event_type, metadata
+        ) VALUES ($1, $2, 'user', 'REMOTE_SESSIONS_REVOKED', $3::jsonb)`,
+        [user.organizationId, user.id, JSON.stringify({ revokedCount: result.rowCount })]
+      )
 
-    return {
-      success: true,
-      message: 'All other active sessions have been signed out.',
-      revokedCount: result.rowCount || 0,
+      await queueNotification(client, {
+        organizationId: user.organizationId,
+        recipientUserId: user.id,
+        type: 'REMOTE_SESSIONS_REVOKED',
+        title: 'Remote Sessions Revoked',
+        body: 'All active remote sessions for your account were signed out',
+        businessEventId: `revoke_others:${user.id}:${Date.now()}`,
+      })
+
+      await client.query('COMMIT')
+      triggerDispatcher(pool, config)
+
+      return {
+        success: true,
+        message: 'All other active sessions have been signed out.',
+        revokedCount: result.rowCount || 0,
+      }
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined)
+      throw err
+    } finally {
+      client.release()
     }
   })
 
@@ -592,7 +614,30 @@ export function registerAuthRoutes(app: FastifyInstance, pool: pg.Pool, config: 
         ]
       )
 
+      // Outbox Notification for onboarding completed
+      const pmRes = await client.query<{ id: string }>(
+        `SELECT u.id FROM users u
+         JOIN user_roles ur ON ur.user_id = u.id
+         JOIN roles r ON r.id = ur.role_id
+         WHERE u.organization_id = $1 AND r.code = 'project_manager' AND u.is_active = true`,
+        [invite.organization_id]
+      )
+      for (const pm of pmRes.rows) {
+        if (pm.id !== newUserId) {
+          await queueNotification(client, {
+            organizationId: invite.organization_id,
+            recipientUserId: pm.id,
+            type: 'TEAM_MEMBER_ONBOARDED',
+            title: 'Team Member Onboarded',
+            body: `${invite.display_name} has completed onboarding and joined the team`,
+            metadata: { newUserId, email: invite.email, role: invite.role_code },
+            businessEventId: `onboard:${newUserId}`,
+          })
+        }
+      }
+
       await client.query('COMMIT')
+      triggerDispatcher(pool, config)
 
       // Dispatch confirmation email in background
       await emailService.sendEmail(
@@ -819,7 +864,17 @@ export function registerAuthRoutes(app: FastifyInstance, pool: pg.Pool, config: 
         [orgId, userId, JSON.stringify({ method: 'token_reset' })]
       )
 
+      await queueNotification(client, {
+        organizationId: orgId,
+        recipientUserId: userId,
+        type: 'PASSWORD_CHANGED',
+        title: 'Password Changed',
+        body: 'Your account password has been reset successfully',
+        businessEventId: `pw_reset:${userId}:${Date.now()}`,
+      })
+
       await client.query('COMMIT')
+      triggerDispatcher(pool, config)
 
       request.log.info({ op: 'password_reset_completed', userId }, 'Password reset successfully completed and active sessions revoked')
       return { success: true, message: 'Password has been reset successfully. Please sign in with your new password.' }
@@ -864,28 +919,49 @@ export function registerAuthRoutes(app: FastifyInstance, pool: pg.Pool, config: 
     }
 
     const newHash = hashPassword(newPassword)
-    await pool.query('UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2', [
-      newHash,
-      user.id,
-    ])
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      await client.query('UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2', [
+        newHash,
+        user.id,
+      ])
 
-    // Revoke all other remote sessions (keep current session active)
-    if (user.sessionId) {
-      await pool.query(
-        'UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND id != $2 AND revoked_at IS NULL',
-        [user.id, user.sessionId]
+      // Revoke all other remote sessions (keep current session active)
+      if (user.sessionId) {
+        await client.query(
+          'UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND id != $2 AND revoked_at IS NULL',
+          [user.id, user.sessionId]
+        )
+      }
+
+      // Append audit event
+      await client.query(
+        `INSERT INTO audit_events (
+          organization_id, actor_user_id, actor_type, event_type, metadata
+        ) VALUES ($1, $2, 'user', 'PASSWORD_CHANGED', $3::jsonb)`,
+        [user.organizationId, user.id, JSON.stringify({ revokedRemoteSessions: true })]
       )
+
+      await queueNotification(client, {
+        organizationId: user.organizationId,
+        recipientUserId: user.id,
+        type: 'PASSWORD_CHANGED',
+        title: 'Password Changed',
+        body: 'Your account password has been updated successfully',
+        businessEventId: `pw_change:${user.id}:${Date.now()}`,
+      })
+
+      await client.query('COMMIT')
+      triggerDispatcher(pool, config)
+
+      request.log.info({ op: 'password_changed', userId: user.id }, 'User changed password and revoked remote sessions')
+      return { success: true, message: 'Your password has been changed successfully. Other active sessions have been signed out.' }
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined)
+      throw err
+    } finally {
+      client.release()
     }
-
-    // Append audit event
-    await pool.query(
-      `INSERT INTO audit_events (
-        organization_id, actor_user_id, actor_type, event_type, metadata
-      ) VALUES ($1, $2, 'user', 'PASSWORD_CHANGED', $3::jsonb)`,
-      [user.organizationId, user.id, JSON.stringify({ revokedRemoteSessions: true })]
-    )
-
-    request.log.info({ op: 'password_changed', userId: user.id }, 'User changed password and revoked remote sessions')
-    return { success: true, message: 'Your password has been changed successfully. Other active sessions have been signed out.' }
   })
 }

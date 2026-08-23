@@ -105,14 +105,12 @@ test.describe('Tier-1 Team Management, Detail Drawer, Matrix & Identity Security
       await navigateToTeam(page)
       await page.getByRole('button', { name: /Add Team Member/i }).click()
 
-      await page.getByLabel('Full Name').fill('Alex Rivera')
-      await page.getByLabel('Work Email Address').fill(inviteEmail)
+      await page.getByLabel(/Full Name/i).fill('Alex Rivera')
+      await page.getByLabel(/Work Email/i).fill(inviteEmail)
 
-      await page.getByRole('button', { name: 'Generate Invite Link', exact: true }).click()
+      await page.getByRole('button', { name: 'Send Invitation' }).click()
 
-      await expect(page.getByRole('heading', { name: 'Team Member Created' })).toBeVisible({ timeout: 10_000 })
-      await expect(page.getByRole('button', { name: 'Copy Invite Link' })).toBeVisible()
-
+      await expect(page.getByRole('heading', { name: 'Invitation Sent' })).toBeVisible({ timeout: 10_000 })
       await page.getByRole('button', { name: 'Done' }).click()
     })
 
@@ -153,41 +151,26 @@ test.describe('Tier-1 Team Management, Detail Drawer, Matrix & Identity Security
       const initialPass = 'Test#Pass12345!'
       const newPass = 'Updated#Pass54321!'
 
-      // 1. Admin provisions user with instant password
+      // 1. Admin provisions user with secure invite link
       await loginAsPm(page)
       await navigateToTeam(page)
       await page.getByRole('button', { name: /Add Team Member/i }).click()
-      await page.getByRole('button', { name: /Temp Password/i }).first().click()
-      await page.getByLabel('Full Name').fill('Security User')
-      await page.getByLabel('Work Email Address').fill(testEmail)
-      await page.getByLabel('Initial Password (Optional)').fill(initialPass)
-      await page.getByRole('button', { name: 'Add Member', exact: true }).click()
-      await expect(page.getByRole('heading', { name: 'Team Member Created' })).toBeVisible({ timeout: 10_000 })
+      await page.getByLabel(/Full Name/i).fill('Security User')
+      await page.getByLabel(/Work Email/i).fill(testEmail)
+      const [inviteRes] = await Promise.all([
+        page.waitForResponse((r) => r.url().includes('/v1/pm/users/invite') && r.status() === 201),
+        page.getByRole('button', { name: 'Send Invitation' }).click(),
+      ])
+      const inviteData = await inviteRes.json()
+      await expect(page.getByRole('heading', { name: 'Invitation Sent' })).toBeVisible({ timeout: 10_000 })
       await page.getByRole('button', { name: 'Done' }).click()
 
-      // 2. Sign out
-      const signOutBtn = page.getByRole('button', { name: 'Sign out' })
-      if (await signOutBtn.isVisible()) {
-        await signOutBtn.click()
-      } else {
-        const menuBtn = page.getByRole('button', { name: 'Open navigation' })
-        if (await menuBtn.isVisible()) {
-          await menuBtn.click()
-          await page.waitForTimeout(300)
-          await page.locator('aside').getByRole('button', { name: 'Sign out' }).last().click()
-        }
-      }
-
-      // 3. Open operations workspace login from landing
-      await page.getByRole('button', { name: /operations workspace/i }).click()
-
-      // 4. Log in as new user
-      await page.getByLabel('Work Email').fill(testEmail)
-      await page.locator('input#password').fill(initialPass)
-      await Promise.all([
-        page.waitForResponse((res) => res.url().includes('/v1/auth/login') && res.status() === 200),
-        page.getByRole('button', { name: 'Sign in' }).click(),
-      ])
+      // 2. Accept invite & set initial password
+      await page.context().clearCookies()
+      await page.goto(`/?invite=${inviteData.rawToken}`)
+      await page.locator('input#invite-password').fill(initialPass)
+      await page.locator('input#invite-confirm-password').fill(initialPass)
+      await page.getByRole('button', { name: 'Join Workspace' }).click()
       await page.waitForTimeout(400)
 
       // 5. Open profile modal
@@ -210,7 +193,7 @@ test.describe('Tier-1 Team Management, Detail Drawer, Matrix & Identity Security
 
       await page.getByLabel('Confirm New Password').fill(newPass)
       await page.getByRole('button', { name: 'Update Password' }).click()
-      await expect(page.getByRole('status')).toContainText(/changed successfully/i)
+      await expect(page.getByText('Your password has been changed successfully')).toBeVisible()
 
       await page.getByLabel('Close profile modal').click()
     })

@@ -6,6 +6,7 @@ const api = process.env.API_BASE_URL ?? 'http://127.0.0.1:4000'
 
 export default defineConfig({
   testDir: './tests/e2e',
+  workers: 1,
   projects: [
     { name: 'desktop', use: { ...devices['Desktop Chrome'] } },
     { name: 'mobile', use: { ...devices['Pixel 5'] } },

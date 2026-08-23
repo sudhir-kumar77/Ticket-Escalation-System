@@ -7,6 +7,7 @@ import { ApiError } from './errors.js'
 import { authenticatePm } from './auth.js'
 import { generateInvitationToken, generateTempPassword, hashPassword } from './crypto.js'
 import { emailService } from './emailService.js'
+import { queueNotification, triggerDispatcher } from './notifications.js'
 
 export interface OrganizationUser {
   id: string
@@ -48,9 +49,19 @@ export function registerUserManagementRoutes(
   const isProd = config.NODE_ENV === 'production'
   const inviteRateLimitMap = new Map<string, { count: number; resetAt: number }>()
 
+  function pruneExpiredRateLimits() {
+    const now = Date.now()
+    for (const [key, record] of inviteRateLimitMap.entries()) {
+      if (now > record.resetAt) {
+        inviteRateLimitMap.delete(key)
+      }
+    }
+  }
+
   function checkInviteRateLimit(orgId: string) {
     if (!isProd) return
     const now = Date.now()
+    if (inviteRateLimitMap.size > 50) pruneExpiredRateLimits()
     const record = inviteRateLimitMap.get(orgId)
     if (!record) return
 
@@ -72,6 +83,7 @@ export function registerUserManagementRoutes(
   function recordInvite(orgId: string) {
     if (!isProd) return
     const now = Date.now()
+    if (inviteRateLimitMap.size > 50) pruneExpiredRateLimits()
     const record = inviteRateLimitMap.get(orgId)
     if (!record || now > record.resetAt) {
       inviteRateLimitMap.set(orgId, { count: 1, resetAt: now + 60 * 1000 })
@@ -367,7 +379,30 @@ export function registerUserManagementRoutes(
         ]
       )
 
+      // Outbox Notification for team invitation
+      const pmRes = await client.query<{ id: string }>(
+        `SELECT u.id FROM users u
+         JOIN user_roles ur ON ur.user_id = u.id
+         JOIN roles r ON r.id = ur.role_id
+         WHERE u.organization_id = $1 AND r.code = 'project_manager' AND u.is_active = true`,
+        [actor.organizationId]
+      )
+      for (const pm of pmRes.rows) {
+        if (pm.id !== actor.id) {
+          await queueNotification(client, {
+            organizationId: actor.organizationId,
+            recipientUserId: pm.id,
+            type: 'TEAM_MEMBER_INVITED',
+            title: 'Team Member Invited',
+            body: `${actor.displayName} invited ${displayName} (${normalizedEmail})`,
+            metadata: { email: normalizedEmail, role },
+            businessEventId: `invite:${normalizedEmail}:${isResend ? 'resend' : 'initial'}`,
+          })
+        }
+      }
+
       await client.query('COMMIT')
+      triggerDispatcher(pool, config)
       recordInvite(actor.organizationId)
       return reply.code(201).send({
         mode: 'invite_link',
@@ -511,6 +546,16 @@ export function registerUserManagementRoutes(
               JSON.stringify({ targetUserId, previousRole: currentTarget.role, newRole: role }),
             ]
           )
+
+          await queueNotification(client, {
+            organizationId: actor.organizationId,
+            recipientUserId: targetUserId,
+            type: 'ROLE_CHANGED',
+            title: 'Role Updated',
+            body: `Your role has been changed to ${role === 'project_manager' ? 'Project Manager' : 'Specialist'}`,
+            metadata: { newRole: role, previousRole: currentTarget.role },
+            businessEventId: `role:${targetUserId}:${Date.now()}`,
+          })
         }
       }
 
@@ -606,6 +651,37 @@ export function registerUserManagementRoutes(
           ) VALUES ($1, $2, 'user', 'USER_DEACTIVATED', $3::jsonb)`,
           [actor.organizationId, actor.id, JSON.stringify({ targetUserId, rebalance: rebalanceSummary })]
         )
+
+        // Queue notifications for deactivation
+        await queueNotification(client, {
+          organizationId: actor.organizationId,
+          recipientUserId: targetUserId,
+          type: 'TEAM_MEMBER_DEACTIVATED',
+          title: 'Account Deactivated',
+          body: 'Your Nvara workspace account has been deactivated',
+          businessEventId: `deact:${targetUserId}:${Date.now()}`,
+        })
+
+        const pmList = await client.query<{ id: string }>(
+          `SELECT u.id FROM users u
+           JOIN user_roles ur ON ur.user_id = u.id
+           JOIN roles r ON r.id = ur.role_id
+           WHERE u.organization_id = $1 AND r.code = 'project_manager' AND u.is_active = true`,
+          [actor.organizationId]
+        )
+        for (const pm of pmList.rows) {
+          if (pm.id !== actor.id && pm.id !== targetUserId) {
+            await queueNotification(client, {
+              organizationId: actor.organizationId,
+              recipientUserId: pm.id,
+              type: 'TEAM_MEMBER_DEACTIVATED',
+              title: 'Team Member Deactivated',
+              body: `${currentTarget.display_name} was deactivated by ${actor.displayName}`,
+              metadata: { targetUserId },
+              businessEventId: `deact_pm:${targetUserId}:${pm.id}:${Date.now()}`,
+            })
+          }
+        }
       } else if (isActive === true && currentTarget.is_active === false) {
         // Audit event for reactivation
         await client.query(
@@ -614,9 +690,41 @@ export function registerUserManagementRoutes(
           ) VALUES ($1, $2, 'user', 'USER_REACTIVATED', $3::jsonb)`,
           [actor.organizationId, actor.id, JSON.stringify({ targetUserId })]
         )
+
+        // Queue notifications for reactivation
+        await queueNotification(client, {
+          organizationId: actor.organizationId,
+          recipientUserId: targetUserId,
+          type: 'TEAM_MEMBER_REACTIVATED',
+          title: 'Account Reactivated',
+          body: 'Your Nvara workspace account has been reactivated',
+          businessEventId: `react:${targetUserId}:${Date.now()}`,
+        })
+
+        const pmList = await client.query<{ id: string }>(
+          `SELECT u.id FROM users u
+           JOIN user_roles ur ON ur.user_id = u.id
+           JOIN roles r ON r.id = ur.role_id
+           WHERE u.organization_id = $1 AND r.code = 'project_manager' AND u.is_active = true`,
+          [actor.organizationId]
+        )
+        for (const pm of pmList.rows) {
+          if (pm.id !== actor.id && pm.id !== targetUserId) {
+            await queueNotification(client, {
+              organizationId: actor.organizationId,
+              recipientUserId: pm.id,
+              type: 'TEAM_MEMBER_REACTIVATED',
+              title: 'Team Member Reactivated',
+              body: `${currentTarget.display_name} was reactivated by ${actor.displayName}`,
+              metadata: { targetUserId },
+              businessEventId: `react_pm:${targetUserId}:${pm.id}:${Date.now()}`,
+            })
+          }
+        }
       }
 
       await client.query('COMMIT')
+      triggerDispatcher(pool, config)
 
       return reply.code(200).send({
         user: {

@@ -91,7 +91,7 @@ function MilestoneStep({
         <div
           className={`w-9 h-9 rounded-full border-2 flex items-center justify-center text-[14px] flex-none transition-all duration-300
             ${completed
-              ? 'bg-[#059669] border-[#059669] text-white shadow-sm'
+              ? 'bg-[#0b131b] border-[#d4e157] text-[#c4fb6d] shadow-[0_0_12px_rgba(212,225,87,0.3)]'
               : 'bg-white border-[#e2e8f0] text-[#94a3b8]'
             }`}
           aria-hidden="true"
@@ -105,7 +105,7 @@ function MilestoneStep({
         {!isLast && (
           <div
             className={`w-[2px] flex-1 min-h-[28px] mt-1 rounded transition-colors duration-300
-              ${completed ? 'bg-[#059669]' : 'bg-[#e2e8f0]'}`}
+              ${completed ? 'bg-[#afb42b]' : 'bg-[#e2e8f0]'}`}
           />
         )}
       </div>
@@ -366,7 +366,7 @@ export function RequestTrackerScreen({ onBack, prefillReference }: RequestTracke
       {/* ── Topbar ── */}
       <header className="h-14 border-b border-[#e2e8e5] bg-white px-6 sm:px-10 flex items-center justify-between sticky top-0 z-10 shadow-2xs">
         <div className="flex items-center gap-3">
-          <div className="w-7 h-7 rounded bg-[#0b131b] text-white flex items-center justify-center font-bold text-xs">
+          <div className="w-7 h-7 rounded bg-[#0b131b] text-[#c4fb6d] border border-[#d4e157]/30 flex items-center justify-center font-bold text-xs">
             N
           </div>
           <span className="font-bold text-[14px] tracking-tight text-[#0b131b]">Nvara Media</span>
@@ -374,14 +374,37 @@ export function RequestTrackerScreen({ onBack, prefillReference }: RequestTracke
             / Track Request
           </span>
         </div>
-        <button
-          type="button"
-          onClick={onBack}
-          className="inline-flex items-center gap-1 text-[13px] font-medium text-[#64748b] hover:text-[#0f172a] px-2.5 py-1 rounded border border-[#e2e8f0] hover:bg-[#f8fafc] transition-colors cursor-pointer"
-        >
-          <span>←</span>
-          <span>Portal Home</span>
-        </button>
+        <div className="flex items-center gap-2.5">
+          <a
+            href="https://nvaramedia.com"
+            target="_blank"
+            rel="noreferrer noopener"
+            className="hidden sm:inline-flex items-center gap-1.5 text-[12px] font-medium text-slate-500 hover:text-slate-900 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+          >
+            <span>← nvaramedia.com</span>
+          </a>
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-semibold text-[#0f172a] bg-white hover:bg-slate-50 border border-slate-300 hover:border-slate-900 shadow-2xs hover:shadow-xs transition-all cursor-pointer select-none group"
+            title="Return to Portal Home"
+          >
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="text-slate-500 group-hover:text-slate-900 group-hover:-translate-x-0.5 transition-transform"
+            >
+              <path d="m15 18-6-6 6-6" />
+            </svg>
+            <span>Portal Home</span>
+          </button>
+        </div>
       </header>
 
       {/* ── Main ── */}

@@ -290,7 +290,7 @@ export function registerPublicTrackerRoutes(
       // for extracting real client IP behind a reverse proxy without manually
       // parsing X-Forwarded-For (which is spoofable without proxy trust config).
       const clientIp = request.ip
-      const rl = checkRateLimit(clientIp, config?.PUBLIC_RATE_LIMIT_PER_MINUTE || 60)
+      const rl = checkRateLimit(clientIp, 10)
       if (!rl.allowed) {
         return reply
           .code(429)

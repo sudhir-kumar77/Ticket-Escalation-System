@@ -23,6 +23,7 @@ import { RequestDetail } from './RequestDetail'
 import { TeamManagement } from './TeamManagement'
 import { ProfileModal } from './ProfileModal'
 import { WhatsAppDispatchDrawer, type WhatsAppDispatchPayload } from './WhatsAppDispatchDrawer'
+import { NotificationCenter } from '../notifications/NotificationCenter'
 
 type DetailRequest = Request & { version: number }
 type Member = TeamMemberCapacity
@@ -415,13 +416,37 @@ const navContent = (
               </span>
             )}
 
+            {/* Notification Center Trigger & Drawer */}
+            <NotificationCenter
+              onNavigateToRequest={(reqId) => {
+                setCurrentView('queue')
+                void openRequest(reqId)
+              }}
+              onNavigateToTeam={() => {
+                setCurrentView('team')
+                setSelected(null)
+              }}
+            />
+
             {/* Seamless Portal Switcher in Header */}
             <button
               onClick={onBack}
-              className="text-[12px] font-medium text-[#64748b] hover:text-[#0f172a] px-2.5 py-1 rounded border border-[#e2e8f0] hover:bg-[#f8fafc] transition-colors inline-flex items-center gap-1 cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-[#0f172a] bg-white hover:bg-slate-50 border border-slate-300 hover:border-slate-900 shadow-2xs hover:shadow-xs transition-all cursor-pointer select-none group"
               title="Return to client portal landing"
             >
-              <ChevronLeft size={12} className="text-[#94a3b8]" />
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="text-slate-500 group-hover:text-slate-900 group-hover:-translate-x-0.5 transition-transform"
+              >
+                <path d="m15 18-6-6 6-6" />
+              </svg>
               <span>Portal Home</span>
             </button>
           </div>

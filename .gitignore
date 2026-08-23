@@ -22,6 +22,7 @@ out/
 
 # Database & Persistent Volumes
 postgres-data/
+.pgdata/
 *.dump
 *.sql.bak
 

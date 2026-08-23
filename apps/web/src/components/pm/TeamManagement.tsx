@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import type { User } from '../../domain/ticket'
 import {
   inviteOrganizationUser,
@@ -213,23 +213,39 @@ export function TeamManagement({
     })
   }
 
-  const filteredUsers = users.filter((u) => {
-    const matchesSearch =
-      u.displayName.toLowerCase().includes(search.toLowerCase()) ||
-      u.email.toLowerCase().includes(search.toLowerCase())
-    const matchesRole = roleFilter === 'all' || u.role === roleFilter
-    const matchesStatus =
-      statusFilter === 'all' || (statusFilter === 'active' ? u.isActive : !u.isActive)
-    return matchesSearch && matchesRole && matchesStatus
-  })
+  const filteredUsers = useMemo(() => {
+    const searchLower = search.toLowerCase().trim()
+    return users.filter((u) => {
+      const matchesSearch =
+        !searchLower ||
+        u.displayName.toLowerCase().includes(searchLower) ||
+        u.email.toLowerCase().includes(searchLower)
+      const matchesRole = roleFilter === 'all' || u.role === roleFilter
+      const matchesStatus =
+        statusFilter === 'all' || (statusFilter === 'active' ? u.isActive : !u.isActive)
+      return matchesSearch && matchesRole && matchesStatus
+    })
+  }, [users, search, roleFilter, statusFilter])
 
-  const otherActiveSpecialists = users.filter(
-    (u) => u.isActive && u.id !== deactivateTarget?.id && u.role === 'internal_team_member'
-  )
+  const otherActiveSpecialists = useMemo(() => {
+    return users.filter(
+      (u) => u.isActive && u.id !== deactivateTarget?.id && u.role === 'internal_team_member'
+    )
+  }, [users, deactivateTarget])
 
-  const activeCount      = users.filter((u) => u.isActive).length
-  const pmCount          = users.filter((u) => u.isActive && u.role === 'project_manager').length
-  const specialistCount  = users.filter((u) => u.isActive && u.role === 'internal_team_member').length
+  const { activeCount, pmCount, specialistCount } = useMemo(() => {
+    let active = 0
+    let pms = 0
+    let specs = 0
+    for (const u of users) {
+      if (u.isActive) {
+        active++
+        if (u.role === 'project_manager') pms++
+        else if (u.role === 'internal_team_member') specs++
+      }
+    }
+    return { activeCount: active, pmCount: pms, specialistCount: specs }
+  }, [users])
 
   // Pagination derived values
   const totalItems  = filteredUsers.length
@@ -237,7 +253,7 @@ export function TeamManagement({
   const currentPage = Math.min(page, totalPages)
   const startIdx    = (currentPage - 1) * pageSize
   const endIdx      = Math.min(startIdx + pageSize, totalItems)
-  const pagedUsers  = filteredUsers.slice(startIdx, endIdx)
+  const pagedUsers  = useMemo(() => filteredUsers.slice(startIdx, endIdx), [filteredUsers, startIdx, endIdx])
 
   // Reset to page 1 whenever the filter criteria change
   useEffect(() => { setPage(1) }, [search, roleFilter, statusFilter, pageSize])
@@ -899,7 +915,7 @@ export function TeamManagement({
                   {inviteResult.phoneWhatsapp ? (
                     <a
                       href={`https://wa.me/${inviteResult.phoneWhatsapp.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
-                        `Hello ${inviteResult.displayName}, you have been invited to join the Nvara Media Operations Workspace. Set your password here: ${inviteResult.inviteUrl}`
+                        `*Nvara Media Operations Workspace* 🚀\n\nHello *${inviteResult.displayName}*,\n\nYou have been invited to join the operations team as *${inviteResult.role === 'project_manager' ? 'Project Manager' : 'Specialist'}*.\n\nPlease click the link below to set your password and access your workspace:\n\n🔗 *Setup Your Account:*\n${typeof window !== 'undefined' && inviteResult.inviteUrl?.includes('?invite=') ? `${window.location.origin}/?invite=${inviteResult.inviteUrl.split('?invite=')[1]}` : (inviteResult.inviteUrl || '')}\n\n_(Note: This is a single-use secure onboarding link valid for 7 days)_`
                       )}`}
                       target="_blank"
                       rel="noreferrer noopener"

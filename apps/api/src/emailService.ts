@@ -431,6 +431,91 @@ If you did not request a password reset, you can safely ignore this email. Your 
       metadata: { type: 'PASSWORD_RESET', ipAddress },
     }
   }
+
+  buildRequestResolvedEmail(params: {
+    to: string
+    clientName: string
+    reference: string
+    requirement: string
+    trackerUrl: string
+  }): TransactionalEmail {
+    const { to, clientName, reference, requirement, trackerUrl } = params
+
+    const subject = `Your request ${reference} has been resolved — Nvara Operations`
+
+    const text = `
+Hello ${clientName},
+
+Great news! Your request (${reference}) has been successfully completed and resolved by our operations team.
+
+Requirement Summary:
+${requirement}
+
+You can review the full milestone timeline and deliverable history on the public tracker:
+${trackerUrl}
+
+Thank you for partnering with Nvara.
+`.trim()
+
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${subject}</title>
+  <style>
+    body { margin:0; padding:0; background-color:#f8fafc; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; color:#0f172a; }
+    .container { max-width:560px; margin:40px auto; background:#ffffff; border:1px solid #e2e8f0; border-radius:16px; overflow:hidden; box-shadow:0 4px 6px -1px rgba(0,0,0,0.05); }
+    .header { background:#0b131b; padding:32px; text-align:center; color:#ffffff; }
+    .content { padding:32px; font-size:14.5px; line-height:1.6; color:#334155; }
+    .btn { display:inline-block; padding:13px 28px; background-color:#059669; color:#ffffff; font-weight:600; font-size:14px; text-decoration:none; border-radius:10px; margin:24px 0; }
+    .footer { padding:24px 32px; background-color:#f1f5f9; font-size:12px; color:#64748b; border-top:1px solid #e2e8f0; text-align:center; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1 style="margin:0;font-size:20px;letter-spacing:-0.02em;">Nvara Operations</h1>
+      <p style="margin:6px 0 0;font-size:13px;color:#94a3b8;">Request Milestone Update</p>
+    </div>
+    <div class="content">
+      <div style="display:inline-block;padding:4px 10px;background:#ecfdf5;border:1px solid #d1fae5;border-radius:9999px;color:#065f46;font-size:12px;font-weight:700;margin-bottom:16px;">
+        ✓ RESOLVED & COMPLETED
+      </div>
+      <h2 style="font-size:18px;color:#0f172a;margin-top:0;">Your Request is Complete</h2>
+      <p>Hello <strong>${clientName}</strong>,</p>
+      <p>Our operations team has completed all deliverables for your request <strong>${reference}</strong>.</p>
+      
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin:20px 0;font-size:13.5px;">
+        <strong style="color:#0f172a;">Requirement:</strong><br>
+        <span style="color:#475569;">${requirement}</span>
+      </div>
+
+      <div style="text-align:center;">
+        <a href="${trackerUrl}" class="btn" style="color:#ffffff;">View Public Tracker →</a>
+      </div>
+
+      <p style="font-size:12px;color:#64748b;margin-top:20px;text-align:center;">
+        Reference Code: <code>${reference}</code>
+      </p>
+    </div>
+    <div class="footer">
+      This is an automated notification from Nvara Media Operations Platform.
+    </div>
+  </div>
+</body>
+</html>
+`.trim()
+
+    return {
+      to,
+      subject,
+      text,
+      html,
+      metadata: { type: 'REQUEST_RESOLVED_CLIENT', reference },
+    }
+  }
 }
 
 function loadEmailConfig() {

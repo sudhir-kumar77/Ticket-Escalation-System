@@ -8,7 +8,7 @@ export function Landing({ onPortal }: { onPortal: (p: ActivePortal) => void }) {
       {/* ── Topbar ── */}
       <header className="h-16 border-b border-[#e2e8e5] bg-white px-6 sm:px-12 flex items-center justify-between sticky top-0 z-10 shadow-xs">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-[#0b131b] text-white flex items-center justify-center font-bold text-sm tracking-tight shadow-xs">
+          <div className="w-8 h-8 rounded-lg bg-[#0b131b] text-[#c4fb6d] border border-[#d4e157]/30 flex items-center justify-center font-bold text-sm tracking-tight shadow-xs">
             N
           </div>
           <div className="flex flex-col">
@@ -21,9 +21,23 @@ export function Landing({ onPortal }: { onPortal: (p: ActivePortal) => void }) {
           </div>
         </div>
 
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#f1f5f9] border border-[#e2e8f0]">
-          <span className="w-2 h-2 rounded-full bg-[#059669]" aria-hidden="true" />
-          <span className="text-[12px] font-medium text-[#334155]">All Systems Operational</span>
+        <div className="flex items-center gap-3">
+          <a
+            href="https://nvaramedia.com"
+            target="_blank"
+            rel="noreferrer noopener"
+            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200/80 rounded-full transition-colors cursor-pointer"
+          >
+            <span>← nvaramedia.com</span>
+          </a>
+
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#0b131b] border border-[#d4e157]/30 text-white shadow-xs">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#c4fb6d] opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#c4fb6d]"></span>
+            </span>
+            <span className="text-[11.5px] font-medium text-slate-200">All Systems Operational</span>
+          </div>
         </div>
       </header>
 
@@ -31,8 +45,8 @@ export function Landing({ onPortal }: { onPortal: (p: ActivePortal) => void }) {
       <main className="flex-1 flex flex-col justify-center max-w-[1120px] w-full mx-auto px-6 sm:px-12 py-12 sm:py-16">
         {/* Headline & Context */}
         <div className="max-w-[680px] mb-10">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-[#ecfdf5] border border-[#d1fae5] text-[#065f46] text-[12px] font-semibold mb-4">
-            <span className="w-2 h-2 rounded-full bg-[#059669]" />
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#0b131b] border border-[#d4e157]/40 text-[#f5f0e8] text-[12px] font-semibold mb-4 shadow-[0_0_15px_rgba(212,225,87,0.12)]">
+            <span className="w-2 h-2 rounded-full bg-[#c4fb6d] shadow-[0_0_8px_#c4fb6d]" />
             Enterprise Request Management &amp; SLA Tracking
           </div>
           <h1 className="text-[32px] sm:text-[42px] font-extrabold tracking-tight leading-[1.18] text-[#0f172a] mb-4">

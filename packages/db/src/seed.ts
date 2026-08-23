@@ -23,10 +23,25 @@ try {
 
   // 2. Service Domains
   const domains: Array<[string, string]> = [
-    ['Digital Marketing', 'digital_marketing'],
+    // Marketing
+    ['Performance Marketing', 'performance_marketing'],
     ['Social Media Marketing', 'social_media_marketing'],
+    // IT Services
+    ['Web Development', 'web_development'],
+    ['App Development', 'app_development'],
+    // Strategy
     ['SEO', 'seo'],
     ['Influencer Marketing', 'influencer_marketing'],
+    // Branding
+    ['Production', 'production'],
+    ['Graphic Design', 'graphic_design'],
+    // Immersive Media
+    ['Animation 2D/3D', 'animation_2d_3d'],
+    ['VFX', 'vfx'],
+    ['AR/VR', 'ar_vr'],
+    ['Game Development', 'game_development'],
+    // Legacy compatibility aliases
+    ['Digital Marketing', 'digital_marketing'],
     ['Web & App Development', 'web_app_development'],
     ['Branding & Graphic Design', 'branding_graphic_design'],
     ['Video Production', 'video_production'],

@@ -57,7 +57,8 @@ export function generateWhatsAppTaskMessage(input: TaskBriefingInput): string {
     msg += `\n*PM Instructions:*\n"${input.customNote.trim()}"\n`
   }
 
-  msg += `\n*Operations Workspace:*\nhttp://127.0.0.1:5173\n`
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'
+  msg += `\n🔗 *Operations Workspace:*\n${origin}\n`
   msg += `━━━━━━━━━━━━━━━━━━━━━━`
 
   return msg

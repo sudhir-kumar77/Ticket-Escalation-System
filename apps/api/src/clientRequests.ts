@@ -5,6 +5,7 @@ import type pg from 'pg';
 import type { AppConfig } from '@nvara/config';
 import { ApiError } from './errors.js';
 import { logger } from './logger.js';
+import { queueNotification, triggerDispatcher } from './notifications.js';
 
 const submissionSchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -111,9 +112,32 @@ export function registerClientRequestRoutes(app: FastifyInstance, pool: pg.Pool,
       const auditBase = [organizationId, created.rows[0].id, assignment.rows[0].id, null];
       await client.query("INSERT INTO audit_events(organization_id,request_id,assignment_id,sla_record_id,actor_type,event_type,new_state,metadata,correlation_id) VALUES ($1,$2,$3,$4,'system','request_created','awaiting_acknowledgement',$5,$6)", [...auditBase, JSON.stringify({ source: 'client_submission' }), request.id]);
       await client.query("INSERT INTO audit_events(organization_id,request_id,assignment_id,sla_record_id,actor_type,event_type,new_state,metadata,correlation_id) VALUES ($1,$2,$3,$4,'system','assigned','awaiting_acknowledgement',$5,$6)", [...auditBase, JSON.stringify({ assignment: 'initial_project_manager' }), request.id]);
+
+      // Notify PMs about new client submission
+      const pmRecipients = await client.query<{ id: string }>(
+        `SELECT u.id FROM users u
+         JOIN user_roles ur ON ur.user_id = u.id
+         JOIN roles r ON r.id = ur.role_id
+         WHERE u.organization_id = $1 AND r.code = 'project_manager' AND u.is_active = true`,
+        [organizationId]
+      );
+      for (const pm of pmRecipients.rows) {
+        await queueNotification(client, {
+          organizationId,
+          recipientUserId: pm.id,
+          type: 'REQUEST_ASSIGNED',
+          title: 'New Client Request Received',
+          body: `New ${body.urgency === 'time_sensitive' ? 'Time-Sensitive ' : ''}request ${reference} from ${body.company || body.name}`,
+          requestId: created.rows[0].id,
+          assignmentId: assignment.rows[0].id,
+          businessEventId: `create:${created.rows[0].id}`,
+        });
+      }
+
       const response: SafeResponse = { reference, createdAt: created.rows[0].created_at, status: 'received' };
       await client.query('UPDATE idempotency_keys SET response_status = $1, response_body = $2 WHERE id = $3', [201, JSON.stringify(response), idempotency.rows[0].id]);
       await client.query('COMMIT');
+      triggerDispatcher(pool, config);
       request.log.info({ requestId: request.id, reference }, 'client request created');
       return reply.code(201).send(response);
     } catch (error) {

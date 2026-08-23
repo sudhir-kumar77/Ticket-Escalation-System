@@ -16,7 +16,7 @@
  *  - Client-side filters (status tab, search) applied locally on fetched data.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Request, RequestFilters, ServiceDomain, TeamMemberCapacity } from '../../domain/ticket'
 import { DEFAULT_FILTERS, SERVICE_DOMAIN_LABELS } from '../../domain/ticket'
 import { formatDateTime, formatRemaining, getSlaSummary } from '../../domain/sla'
@@ -111,91 +111,103 @@ export function RequestQueue({
   // ── Reset page on any filter change ───────────────────────────────────────
   useEffect(() => { setPage(1) }, [statusTab, search, pageSize, activeFilters])
 
-  // ── Count buckets for status tabs ─────────────────────────────────────────
-  // ── Multi-criteria filter pipeline (Domain, Urgency, SLA Status, Date, Assignee, Status, Search) ──
-  const baseFiltered = requests.filter(r => {
-    // 1. Assignee Filter
-    if (activeFilters.assigneeId === 'me') {
-      const isAssigned =
-        r.assignment?.assignee?.id === currentUserId ||
-        (r as any).currentResponsibility?.id === currentUserId ||
-        (r as any).assigneeId === currentUserId
-      if (!isAssigned) return false
-    } else if (activeFilters.assigneeId) {
-      const matchesAssignee =
-        r.assignment?.assignee?.id === activeFilters.assigneeId ||
-        (r as any).currentResponsibility?.id === activeFilters.assigneeId ||
-        (r as any).assigneeId === activeFilters.assigneeId
-      if (!matchesAssignee) return false
-    }
+  // ── Multi-criteria filter pipeline (Domain, Urgency, SLA Status, Date, Assignee) ──
+  const baseFiltered = useMemo(() => {
+    return requests.filter(r => {
+      // 1. Assignee Filter
+      if (activeFilters.assigneeId === 'me') {
+        const isAssigned =
+          r.assignment?.assignee?.id === currentUserId ||
+          (r as any).currentResponsibility?.id === currentUserId ||
+          (r as any).assigneeId === currentUserId
+        if (!isAssigned) return false
+      } else if (activeFilters.assigneeId) {
+        const matchesAssignee =
+          r.assignment?.assignee?.id === activeFilters.assigneeId ||
+          (r as any).currentResponsibility?.id === activeFilters.assigneeId ||
+          (r as any).assigneeId === activeFilters.assigneeId
+        if (!matchesAssignee) return false
+      }
 
-    // 2. Service Domain Filter
-    if (activeFilters.domain && r.serviceDomain !== activeFilters.domain) {
-      return false
-    }
-
-    // 3. Urgency Filter
-    if (activeFilters.urgency) {
-      const urg = r.clientUrgency || (r as any).urgency
-      if (urg !== activeFilters.urgency) return false
-    }
-
-    // 4. SLA Status Filter
-    if (activeFilters.slaStatus) {
-      const sla = getSlaSummary(r)
-      if (activeFilters.slaStatus === 'healthy' && (sla.state === 'breached' || sla.state === 'escalated')) {
+      // 2. Service Domain Filter
+      if (activeFilters.domain && r.serviceDomain !== activeFilters.domain) {
         return false
       }
-      if (activeFilters.slaStatus === 'near_breach' && !(sla.remainingMs <= 4 * 60 * 60 * 1000 && sla.remainingMs > 0 && r.workflowStatus !== 'resolved')) {
-        return false
+
+      // 3. Urgency Filter
+      if (activeFilters.urgency) {
+        const urg = r.clientUrgency || (r as any).urgency
+        if (urg !== activeFilters.urgency) return false
       }
-      if (activeFilters.slaStatus === 'breached' && sla.state !== 'breached' && sla.state !== 'escalated') {
-        return false
+
+      // 4. SLA Status Filter
+      if (activeFilters.slaStatus) {
+        const sla = getSlaSummary(r)
+        if (activeFilters.slaStatus === 'healthy' && (sla.state === 'breached' || sla.state === 'escalated')) {
+          return false
+        }
+        if (activeFilters.slaStatus === 'near_breach' && !(sla.remainingMs <= 4 * 60 * 60 * 1000 && sla.remainingMs > 0 && r.workflowStatus !== 'resolved')) {
+          return false
+        }
+        if (activeFilters.slaStatus === 'breached' && sla.state !== 'breached' && sla.state !== 'escalated') {
+          return false
+        }
       }
-    }
 
-    // 5. Date Range Filter
-    if (activeFilters.dateFrom) {
-      const created = new Date(r.createdAt).getTime()
-      const from = new Date(activeFilters.dateFrom).getTime()
-      if (!isNaN(created) && !isNaN(from) && created < from) return false
-    }
-    if (activeFilters.dateTo) {
-      const created = new Date(r.createdAt).getTime()
-      const to = new Date(activeFilters.dateTo).getTime()
-      if (!isNaN(created) && !isNaN(to) && created > to) return false
-    }
+      // 5. Date Range Filter
+      if (activeFilters.dateFrom) {
+        const created = new Date(r.createdAt).getTime()
+        const from = new Date(activeFilters.dateFrom).getTime()
+        if (!isNaN(created) && !isNaN(from) && created < from) return false
+      }
+      if (activeFilters.dateTo) {
+        const created = new Date(r.createdAt).getTime()
+        const to = new Date(activeFilters.dateTo).getTime()
+        if (!isNaN(created) && !isNaN(to) && created > to) return false
+      }
 
-    return true
-  })
+      return true
+    })
+  }, [requests, activeFilters, currentUserId])
 
-  // ── Status Tab Buckets (scoped to active criteria) ──
-  const needsAck   = baseFiltered.filter(r => r.workflowStatus === 'awaiting_acknowledgement')
-  const escalated  = baseFiltered.filter(r => Boolean(r.escalation) && r.workflowStatus !== 'resolved')
-  const inProgress = baseFiltered.filter(r => r.workflowStatus === 'in_progress')
-  const resolved   = baseFiltered.filter(r => r.workflowStatus === 'resolved')
+  // ── Status Tab Buckets (Computed in a Single O(N) Pass) ──
+  const { needsAck, escalated, inProgress, resolved } = useMemo(() => {
+    const na: Request[] = []
+    const esc: Request[] = []
+    const inp: Request[] = []
+    const res: Request[] = []
+    for (const r of baseFiltered) {
+      if (r.workflowStatus === 'awaiting_acknowledgement') na.push(r)
+      if (Boolean(r.escalation) && r.workflowStatus !== 'resolved') esc.push(r)
+      if (r.workflowStatus === 'in_progress') inp.push(r)
+      if (r.workflowStatus === 'resolved') res.push(r)
+    }
+    return { needsAck: na, escalated: esc, inProgress: inp, resolved: res }
+  }, [baseFiltered])
 
   // ── Status Tab Filter ──
-  const afterStatusFilter = baseFiltered.filter(r => {
-    if (statusTab === 'needs_ack')  return r.workflowStatus === 'awaiting_acknowledgement'
-    if (statusTab === 'escalated')  return Boolean(r.escalation) && r.workflowStatus !== 'resolved'
-    if (statusTab === 'in_progress') return r.workflowStatus === 'in_progress'
-    if (statusTab === 'resolved')   return r.workflowStatus === 'resolved'
-    return true
-  })
+  const afterStatusFilter = useMemo(() => {
+    if (statusTab === 'all') return baseFiltered
+    if (statusTab === 'needs_ack') return needsAck
+    if (statusTab === 'escalated') return escalated
+    if (statusTab === 'in_progress') return inProgress
+    if (statusTab === 'resolved') return resolved
+    return baseFiltered
+  }, [baseFiltered, statusTab, needsAck, escalated, inProgress, resolved])
 
   // ── Full-text Search ──
-  const searchLower = search.toLowerCase().trim()
-  const filteredRequests = searchLower
-    ? afterStatusFilter.filter(r =>
-        r.id.toLowerCase().includes(searchLower) ||
-        r.subject.toLowerCase().includes(searchLower) ||
-        (r.description && r.description.toLowerCase().includes(searchLower)) ||
-        r.client.name.toLowerCase().includes(searchLower) ||
-        r.client.company.toLowerCase().includes(searchLower) ||
-        SERVICE_DOMAIN_LABELS[r.serviceDomain]?.toLowerCase().includes(searchLower)
-      )
-    : afterStatusFilter
+  const filteredRequests = useMemo(() => {
+    const searchLower = search.toLowerCase().trim()
+    if (!searchLower) return afterStatusFilter
+    return afterStatusFilter.filter(r =>
+      r.id.toLowerCase().includes(searchLower) ||
+      r.subject.toLowerCase().includes(searchLower) ||
+      (r.description && r.description.toLowerCase().includes(searchLower)) ||
+      r.client.name.toLowerCase().includes(searchLower) ||
+      r.client.company.toLowerCase().includes(searchLower) ||
+      SERVICE_DOMAIN_LABELS[r.serviceDomain]?.toLowerCase().includes(searchLower)
+    )
+  }, [afterStatusFilter, search])
 
   // ── Pagination ─────────────────────────────────────────────────────────────
   const totalItems   = filteredRequests.length
@@ -203,7 +215,7 @@ export function RequestQueue({
   const currentPage  = Math.min(page, totalPages)
   const startIndex   = (currentPage - 1) * pageSize
   const endIndex     = Math.min(startIndex + pageSize, totalItems)
-  const paginated    = filteredRequests.slice(startIndex, endIndex)
+  const paginated    = useMemo(() => filteredRequests.slice(startIndex, endIndex), [filteredRequests, startIndex, endIndex])
 
   // ── Server-side filter helpers ─────────────────────────────────────────────
   const serverFilterCount = countActiveFilters(activeFilters)

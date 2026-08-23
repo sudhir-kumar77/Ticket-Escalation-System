@@ -10,6 +10,7 @@
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
+    "firebase": "^12.18.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },

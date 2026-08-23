@@ -6,20 +6,100 @@ export type ClientUrgency = 'flexible' | 'soon' | 'time_sensitive'
 export type WorkflowStatus = 'awaiting_acknowledgement' | 'acknowledged' | 'in_progress' | 'resolved'
 
 export type ServiceDomain =
-  | 'digital_marketing'
+  // Marketing
+  | 'performance_marketing'
   | 'social_media_marketing'
+  // IT Services
+  | 'web_development'
+  | 'app_development'
+  // Strategy
   | 'seo'
   | 'influencer_marketing'
+  // Branding
+  | 'production'
+  | 'graphic_design'
+  // Immersive Media
+  | 'animation_2d_3d'
+  | 'vfx'
+  | 'ar_vr'
+  | 'game_development'
+  // Legacy aliases for backward compatibility
+  | 'digital_marketing'
   | 'web_app_development'
   | 'branding_graphic_design'
   | 'video_production'
   | 'immersive_media'
 
+export type ServiceCategory =
+  | 'Marketing'
+  | 'IT Services'
+  | 'Strategy'
+  | 'Branding'
+  | 'Immersive Media'
+
+export const SERVICE_DOMAIN_GROUPS: Array<{
+  category: ServiceCategory
+  options: Array<{ slug: ServiceDomain; label: string; description: string }>
+}> = [
+  {
+    category: 'Marketing',
+    options: [
+      { slug: 'performance_marketing', label: 'Performance Marketing', description: 'Google Ads, Meta Ads, Paid Search & conversion optimization' },
+      { slug: 'social_media_marketing', label: 'Social Media Marketing', description: 'Organic social campaigns, community management, brand handles' },
+    ],
+  },
+  {
+    category: 'IT Services',
+    options: [
+      { slug: 'web_development', label: 'Web Development', description: 'Custom web applications, frontends, enterprise websites' },
+      { slug: 'app_development', label: 'App Development', description: 'Native & cross-platform iOS and Android mobile applications' },
+    ],
+  },
+  {
+    category: 'Strategy',
+    options: [
+      { slug: 'seo', label: 'SEO', description: 'Technical SEO, search ranking, organic growth & content indexing' },
+      { slug: 'influencer_marketing', label: 'Influencer Marketing', description: 'Creator partnerships, sponsored media & outreach campaigns' },
+    ],
+  },
+  {
+    category: 'Branding',
+    options: [
+      { slug: 'production', label: 'Production', description: 'Live video filming, post-production, commercial shoots' },
+      { slug: 'graphic_design', label: 'Graphic Design', description: 'Visual identity, typography, brand guidelines & marketing collateral' },
+    ],
+  },
+  {
+    category: 'Immersive Media',
+    options: [
+      { slug: 'animation_2d_3d', label: 'Animation 2D/3D', description: 'Character animation, 2D motion graphics, 3D modelling & rendering' },
+      { slug: 'vfx', label: 'VFX', description: 'Visual effects, compositing, CGI simulation & cinematic enhancements' },
+      { slug: 'ar_vr', label: 'AR/VR', description: 'Augmented & Virtual Reality interactive spatial experiences' },
+      { slug: 'game_development', label: 'Game Development', description: 'Interactive 2D/3D games, Unreal/Unity engines, interactive assets' },
+    ],
+  },
+]
+
 export const SERVICE_DOMAIN_LABELS: Record<ServiceDomain, string> = {
-  digital_marketing: 'Digital Marketing',
+  // Marketing
+  performance_marketing: 'Performance Marketing',
   social_media_marketing: 'Social Media Marketing',
+  // IT Services
+  web_development: 'Web Development',
+  app_development: 'App Development',
+  // Strategy
   seo: 'SEO',
   influencer_marketing: 'Influencer Marketing',
+  // Branding
+  production: 'Production',
+  graphic_design: 'Graphic Design',
+  // Immersive Media
+  animation_2d_3d: 'Animation 2D/3D',
+  vfx: 'VFX',
+  ar_vr: 'AR/VR',
+  game_development: 'Game Development',
+  // Legacy aliases
+  digital_marketing: 'Digital Marketing',
   web_app_development: 'Web & App Development',
   branding_graphic_design: 'Branding & Graphic Design',
   video_production: 'Video Production',
@@ -27,10 +107,25 @@ export const SERVICE_DOMAIN_LABELS: Record<ServiceDomain, string> = {
 }
 
 export const SERVICE_DOMAIN_DESCRIPTIONS: Record<ServiceDomain, string> = {
+  // Marketing
+  performance_marketing: 'Google Ads, Meta Ads, Paid Search & conversion optimization',
+  social_media_marketing: 'Organic social campaigns, community management, brand handles',
+  // IT Services
+  web_development: 'Custom web applications, frontends, enterprise websites',
+  app_development: 'Native & cross-platform iOS and Android mobile applications',
+  // Strategy
+  seo: 'Technical SEO, search ranking, organic growth & content indexing',
+  influencer_marketing: 'Creator partnerships, sponsored media & outreach campaigns',
+  // Branding
+  production: 'Live video filming, post-production, commercial shoots',
+  graphic_design: 'Visual identity, typography, brand guidelines & marketing collateral',
+  // Immersive Media
+  animation_2d_3d: 'Character animation, 2D motion graphics, 3D modelling & rendering',
+  vfx: 'Visual effects, compositing, CGI simulation & cinematic enhancements',
+  ar_vr: 'Augmented & Virtual Reality interactive spatial experiences',
+  game_development: 'Interactive 2D/3D games, Unreal/Unity engines, interactive assets',
+  // Legacy aliases
   digital_marketing: 'Google Ads, Meta Ads, lead generation, conversion optimisation',
-  social_media_marketing: 'Content strategy, community management, paid social campaigns',
-  seo: 'Organic search optimisation and visibility improvement',
-  influencer_marketing: 'Influencer partnerships to expand brand reach',
   web_app_development: 'Custom websites, mobile apps, web solutions',
   branding_graphic_design: 'Visual identity, brand assets, graphic design',
   video_production: 'Corporate video, filming, editing, colour grading',

@@ -1,5 +1,10 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import path from 'node:path';
 import { z } from 'zod';
+
+dotenv.config();
+dotenv.config({ path: path.resolve(process.cwd(), '../../.env') });
+dotenv.config({ path: path.resolve(process.cwd(), '../.env') });
 
 const schema = z.object({
   DATABASE_URL: z.string().min(1),
@@ -17,6 +22,10 @@ const schema = z.object({
   EMAIL_USER: z.string().optional(),
   EMAIL_PASS: z.string().optional(),
   EMAIL_FROM: z.string().optional(),
+  FIREBASE_PROJECT_ID: z.string().optional(),
+  FIREBASE_CLIENT_EMAIL: z.string().optional(),
+  FIREBASE_PRIVATE_KEY: z.string().optional(),
+  FIREBASE_VAPID_KEY: z.string().optional(),
 });
 
 export type AppConfig = z.infer<typeof schema>;

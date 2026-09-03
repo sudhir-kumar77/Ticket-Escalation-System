@@ -7,9 +7,6 @@
 #   nvara-api     → Fastify API (port 4000)
 #   nvara-web     → React SPA served via Nginx (proxies /v1/ to API)
 #
-# BEFORE deploying: set EMAIL_USER and EMAIL_PASS in the Render dashboard
-# (Dashboard → nvara-api → Environment) with your Mailtrap SMTP credentials.
-#
 # Worker is omitted — enable separately when upgrading to a paid tier.
 
 databases:
@@ -17,7 +14,7 @@ databases:
     databaseName: nvara_production
     user: nvara
     plan: free
-    ipAllowList: []   # allow all (internal Render network only)
+    ipAllowList: []
 
 services:
   # ── API ─────────────────────────────────────────────────────────────────────
@@ -47,14 +44,10 @@ services:
       - key: SLA_POLL_INTERVAL_SECONDS
         value: "60"
       - key: WEB_ORIGIN
-        fromService:
-          name: nvara-web
-          type: web
-          property: hostURL
+        value: https://nvara-web.onrender.com
       # ── SMTP (optional) ───────────────────────────────────────────────────
       # Add EMAIL_HOST, EMAIL_USER, EMAIL_PASS, EMAIL_FROM via Render dashboard
       # when you're ready to enable email features (password reset, invitations).
-
 
   # ── Web (SPA + Nginx proxy) ──────────────────────────────────────────────────
   - type: web
@@ -64,7 +57,4 @@ services:
     plan: free
     envVars:
       - key: API_URL
-        fromService:
-          name: nvara-api
-          type: web
-          property: hostURL
+        value: https://nvara-api.onrender.com

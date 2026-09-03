@@ -340,7 +340,7 @@ export function registerWorkflowMutationRoutes(app: FastifyInstance, pool: pg.Po
           const webOrigin = config.WEB_ORIGIN || 'http://localhost:3000'
           const ref = String((request.params as any).id)
           const trackerUrl = `${webOrigin}/?track=${encodeURIComponent(ref)}`
-          await emailService.sendEmail(
+          emailService.sendEmail(
             emailService.buildRequestResolvedEmail({
               to: clientEmail,
               clientName: clientRes.rows[0]?.name || 'Client',
@@ -348,7 +348,9 @@ export function registerWorkflowMutationRoutes(app: FastifyInstance, pool: pg.Po
               requirement: (row as any).requirement || 'Project Deliverables',
               trackerUrl,
             })
-          )
+          ).catch((err: any) => {
+            console.warn(`[Resolve Email Warning] Could not send resolution email to ${clientEmail}: ${err?.message || err}`)
+          })
         }
       }
 

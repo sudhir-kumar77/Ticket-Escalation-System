@@ -108,15 +108,14 @@ class QueueTransport implements EmailTransport {
   }
 
   async send(email: TransactionalEmail): Promise<{ id: string; success: boolean }> {
-    const id = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
-
-    await this.pool.query(
-      `INSERT INTO email_queue (id, to_email, subject, html, text, metadata, status, scheduled_at)
-       VALUES ($1, $2, $3, $4, $5, $6, 'QUEUED', now())`,
-      [id, email.to, email.subject, email.html, email.text, JSON.stringify(email.metadata || {})]
+    const result = await this.pool.query<{ id: string }>(
+      `INSERT INTO email_queue (to_email, subject, html, text, metadata, status, scheduled_at)
+       VALUES ($1, $2, $3, $4, $5, 'QUEUED', now())
+       RETURNING id`,
+      [email.to, email.subject, email.html, email.text, JSON.stringify(email.metadata || {})]
     )
 
-    return { id, success: true }
+    return { id: result.rows[0]?.id || '', success: true }
   }
 }
 

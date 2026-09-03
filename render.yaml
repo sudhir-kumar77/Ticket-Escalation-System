@@ -1,0 +1,75 @@
+---
+# Render Infrastructure-as-Code
+# https://render.com/docs/infrastructure-as-code
+#
+# Services:
+#   nvara-db      → Managed PostgreSQL 16
+#   nvara-api     → Fastify API (port 4000)
+#   nvara-web     → React SPA served via Nginx (proxies /v1/ to API)
+#
+# Worker is omitted — enable separately when upgrading to a paid tier.
+
+databases:
+  - name: nvara-db
+    databaseName: nvara_production
+    user: nvara
+    plan: free
+    ipAllowList: []   # allow all (internal Render network only)
+
+services:
+  # ── API ─────────────────────────────────────────────────────────────────────
+  - type: web
+    name: nvara-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile.api
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DEV_AUTH_ENABLED
+        value: "false"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: nvara-db
+          property: connectionString
+      - key: DEFAULT_ORGANIZATION_NAME
+        value: Nvara Media
+      - key: PUBLIC_RATE_LIMIT_PER_MINUTE
+        value: "60"
+      - key: API_PORT
+        value: "4000"
+      - key: LOG_LEVEL
+        value: info
+      - key: SLA_POLL_INTERVAL_SECONDS
+        value: "60"
+      - key: WEB_ORIGIN
+        sync: false   # fill in Render dashboard after web service is created
+      # ── SMTP (Mailtrap) ────────────────────────────────────────────────────
+      - key: EMAIL_HOST
+        value: sandbox.smtp.mailtrap.io
+      - key: EMAIL_PORT
+        value: "587"
+      - key: EMAIL_SECURE
+        value: "false"
+      - key: EMAIL_USER
+        sync: false   # paste your Mailtrap SMTP username in the dashboard
+      - key: EMAIL_PASS
+        sync: false   # paste your Mailtrap SMTP password in the dashboard
+      - key: EMAIL_FROM
+        value: "Nvara Operations <noreply@nvaramedia.com>"
+
+  # ── Web (SPA + Nginx proxy) ──────────────────────────────────────────────────
+  - type: web
+    name: nvara-web
+    runtime: docker
+    dockerfilePath: ./Dockerfile.web
+    plan: free
+    envVars:
+      - key: API_URL
+        fromService:
+          name: nvara-api
+          type: web
+          property: host
+          # Render expands this to https://<nvara-api>.onrender.com
+          # nginx.conf uses ${API_URL} which envsubst replaces at startup

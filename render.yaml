@@ -44,14 +44,14 @@ services:
       - key: SLA_POLL_INTERVAL_SECONDS
         value: "60"
       - key: WEB_ORIGIN
-        value: https://nvara-web.onrender.com
+        value: https://datavexa.onrender.com
       # ── SMTP (optional) ───────────────────────────────────────────────────
       # Add EMAIL_HOST, EMAIL_USER, EMAIL_PASS, EMAIL_FROM via Render dashboard
       # when you're ready to enable email features (password reset, invitations).
 
   # ── Web (SPA + Nginx proxy) ──────────────────────────────────────────────────
   - type: web
-    name: nvara-web
+    name: datavexa
     runtime: docker
     dockerfilePath: ./Dockerfile.web
     plan: free

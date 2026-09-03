@@ -18,6 +18,8 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/apps/api ./apps/api
 COPY --from=build /app/packages/config ./packages/config
 COPY --from=build /app/packages/db ./packages/db
+COPY scripts/start-api.sh ./scripts/start-api.sh
+RUN chmod +x ./scripts/start-api.sh
 USER node
 EXPOSE 4000
-CMD ["node", "apps/api/dist/server.js"]
+CMD ["sh", "./scripts/start-api.sh"]

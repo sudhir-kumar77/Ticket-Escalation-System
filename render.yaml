@@ -51,22 +51,10 @@ services:
           name: nvara-web
           type: web
           property: host
-      # ── SMTP (Mailtrap) ────────────────────────────────────────────────────
-      # ACTION REQUIRED: Set EMAIL_USER and EMAIL_PASS in the Render dashboard
-      # before deploying. Go to: Dashboard → nvara-api → Environment
-      # Get credentials from: https://mailtrap.io → Inboxes → SMTP Settings
-      - key: EMAIL_HOST
-        value: sandbox.smtp.mailtrap.io
-      - key: EMAIL_PORT
-        value: "587"
-      - key: EMAIL_SECURE
-        value: "false"
-      - key: EMAIL_USER
-        sync: false
-      - key: EMAIL_PASS
-        sync: false
-      - key: EMAIL_FROM
-        value: "Nvara Operations <noreply@nvaramedia.com>"
+      # ── SMTP (optional) ───────────────────────────────────────────────────
+      # Add EMAIL_HOST, EMAIL_USER, EMAIL_PASS, EMAIL_FROM via Render dashboard
+      # when you're ready to enable email features (password reset, invitations).
+
 
   # ── Web (SPA + Nginx proxy) ──────────────────────────────────────────────────
   - type: web

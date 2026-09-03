@@ -35,6 +35,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   if (parsed.data.NODE_ENV === 'production' && parsed.data.DEV_AUTH_ENABLED) throw new Error('Invalid environment configuration: DEV_AUTH_ENABLED must be false in production.');
   if (parsed.data.NODE_ENV === 'production' && !env.DEFAULT_ORGANIZATION_NAME?.trim()) throw new Error('Invalid environment configuration: DEFAULT_ORGANIZATION_NAME is required in production.');
   if (parsed.data.NODE_ENV === 'production' && /^https?:\/\/localhost(?::\d+)?$/i.test(parsed.data.WEB_ORIGIN)) throw new Error('Invalid environment configuration: WEB_ORIGIN must not use localhost in production.');
-  if (parsed.data.NODE_ENV === 'production' && (!env.EMAIL_HOST || !env.EMAIL_USER || !env.EMAIL_PASS)) throw new Error('Invalid environment configuration: EMAIL_HOST, EMAIL_USER, and EMAIL_PASS are required in production.');
+  // EMAIL_HOST, EMAIL_USER, EMAIL_PASS are optional — email features will be disabled if not set.
   return parsed.data;
 }

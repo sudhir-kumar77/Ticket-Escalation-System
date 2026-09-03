@@ -7,6 +7,9 @@
 #   nvara-api     → Fastify API (port 4000)
 #   nvara-web     → React SPA served via Nginx (proxies /v1/ to API)
 #
+# BEFORE deploying: set EMAIL_USER and EMAIL_PASS in the Render dashboard
+# (Dashboard → nvara-api → Environment) with your Mailtrap SMTP credentials.
+#
 # Worker is omitted — enable separately when upgrading to a paid tier.
 
 databases:
@@ -44,8 +47,14 @@ services:
       - key: SLA_POLL_INTERVAL_SECONDS
         value: "60"
       - key: WEB_ORIGIN
-        sync: false   # fill in Render dashboard after web service is created
+        fromService:
+          name: nvara-web
+          type: web
+          property: host
       # ── SMTP (Mailtrap) ────────────────────────────────────────────────────
+      # ACTION REQUIRED: Set EMAIL_USER and EMAIL_PASS in the Render dashboard
+      # before deploying. Go to: Dashboard → nvara-api → Environment
+      # Get credentials from: https://mailtrap.io → Inboxes → SMTP Settings
       - key: EMAIL_HOST
         value: sandbox.smtp.mailtrap.io
       - key: EMAIL_PORT
@@ -53,9 +62,9 @@ services:
       - key: EMAIL_SECURE
         value: "false"
       - key: EMAIL_USER
-        sync: false   # paste your Mailtrap SMTP username in the dashboard
+        sync: false
       - key: EMAIL_PASS
-        sync: false   # paste your Mailtrap SMTP password in the dashboard
+        sync: false
       - key: EMAIL_FROM
         value: "Nvara Operations <noreply@nvaramedia.com>"
 
@@ -71,5 +80,3 @@ services:
           name: nvara-api
           type: web
           property: host
-          # Render expands this to https://<nvara-api>.onrender.com
-          # nginx.conf uses ${API_URL} which envsubst replaces at startup
